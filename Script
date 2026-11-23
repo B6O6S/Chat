@@ -1,4 +1,4 @@
--- Delta Global Chat Script (Jojo WhiteBall & FlatPinkBall Integrated Into Assembly & Cleanup Lifecycle)
+-- Delta Global Chat Script (Updated JSONBin ID & Master Key)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -12,8 +12,8 @@ local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 -- Configuration
-local BIN_ID = "6b028fa1ffd5d16053d51ea2"
-local API_KEY = "$2a$10$ARHEPqYBZLEFL88JESfqWOHa0hBlQFFqE9QjvAuf7dgw2xxBNvVUK"
+local BIN_ID = "6b041105ffd5d16053d750ed"
+local API_KEY = "$2a$10$6bkF.uKKzylbHJYBIiMHte.YHFcrAaU6lyz4PgBAYRN6NibVZ5vzm"
 local USERNAME = LocalPlayer.Name
 local USER_ID = LocalPlayer.UserId
 
@@ -1981,7 +1981,7 @@ ToggleButton.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 ToggleButton.BackgroundTransparency = 0.3
 ToggleButton.Image = "rbxassetid://93137947315746"
 ToggleButton.Active = true
-ToggleButton.Draggable = true
+ToggleButton.Draggable = not isLocked
 ToggleButton.Parent = ToggleScreenGui
 
 local ToggleCorner = Instance.new("UICorner")
@@ -1989,7 +1989,7 @@ ToggleCorner.CornerRadius = UDim.new(1, 0)
 ToggleCorner.Parent = ToggleButton
 
 local ToggleStroke = Instance.new("UIStroke")
-ToggleStroke.Color = Color3.fromRGB(120, 120, 120)
+ToggleStroke.Color = isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120)
 ToggleStroke.Thickness = 2
 ToggleStroke.Parent = ToggleButton
 
@@ -2011,6 +2011,7 @@ BadgeCorner.CornerRadius = UDim.new(1, 0)
 BadgeCorner.Parent = UnreadBadge
 
 ToggleButton.InputEnded:Connect(function(input)
+    if isLocked then return end
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         if writefile then
             task.delay(0.1, function()
@@ -2469,8 +2470,14 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
+local function setToggleLockState(locked)
+    ToggleButton.Draggable = not locked
+    ToggleStroke.Color = locked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120)
+end
+
 LockButton.MouseButton1Click:Connect(function()
     isLocked = not isLocked
+    setToggleLockState(isLocked)
     if isLocked then
         LockButton.Text = "🔒"
         UIStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(70, 70, 70)
@@ -2931,3 +2938,5 @@ task.spawn(function()
         task.wait(1.5)
     end
 end)
+
+print("✅ Delta Chat Loaded Successfully!")
