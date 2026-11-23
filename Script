@@ -1,4 +1,4 @@
--- Delta Global Chat Script (Updated JSONBin ID & Master Key)
+-- Delta Global Chat Script (Yummy Sound 84656725012802 + Single Kiss Sound + Non-Sender Teleport)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -16,6 +16,13 @@ local BIN_ID = "6b041105ffd5d16053d750ed"
 local API_KEY = "$2a$10$6bkF.uKKzylbHJYBIiMHte.YHFcrAaU6lyz4PgBAYRN6NibVZ5vzm"
 local USERNAME = LocalPlayer.Name
 local USER_ID = LocalPlayer.UserId
+
+-- Polling intervals (seconds) to conserve JSONBin requests
+local POLL_INTERVAL_OPEN = 3.5
+local POLL_INTERVAL_CLOSED = 8.0
+
+-- Permanent background transparency for Settings and Commands menus
+local MENU_TRANSPARENCY = 0.65
 
 -- Admin & Emote Configuration
 local ADMINS = {
@@ -64,8 +71,8 @@ local ROMANTIC_DANCE_EMOTES = {
 }
 
 local KISS_SOUND_ID = "rbxassetid://131368327643370"
-local YUMMY_SOUND_ID = "rbxassetid://6892830182"
-local LICK_SOUND_ID = "rbxassetid://139149004682559"
+local YUMMY_SOUND_ID = "rbxassetid://84656725012802"
+local LICK_SOUND_ID = "rbxassetid://9114122522"
 local SLAP_SOUND_ID = "rbxassetid://120775155573180"
 local RIP_CLOTHES_SOUND_ID = "rbxassetid://75936211172606"
 
@@ -427,6 +434,24 @@ local function findPlayerCaseInsensitive(targetName)
         end
     end
     return nil
+end
+
+-- Teleports whichever player did NOT click the command to the player who clicked it
+local function teleportNonSenderToInitiator(initiatorName)
+    if not initiatorName then return end
+    if string.lower(USERNAME) == string.lower(initiatorName) then return end
+
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    local senderPlayer = findPlayerCaseInsensitive(initiatorName)
+    local senderRoot = senderPlayer and senderPlayer.Character and senderPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+    if myRoot and senderRoot then
+        local destPos = senderRoot.Position + (senderRoot.CFrame.LookVector * 1.75)
+        myRoot.AssemblyLinearVelocity = Vector3.zero
+        myRoot.AssemblyAngularVelocity = Vector3.zero
+        myRoot.CFrame = CFrame.lookAt(destPos, senderRoot.Position)
+    end
 end
 
 local function destroySpawnedAssemblies()
@@ -1018,7 +1043,6 @@ local function destroyFloatPlatform()
     end
 end
 
--- Creates once at the target spot under the player and stays fixed in place until STOP
 local function createFixedFloatPlatformAt(rootPart, humanoid)
     if not rootPart then return end
     destroyFloatPlatform()
@@ -1841,68 +1865,131 @@ local function triggerPairedEmoteSequence(initiatorName, emoteMap, soundConfig, 
     StopButton.Visible = true
 end
 
--- Sends private admin command without showing anything in chat
-local isSendingCommand = false
-local lastCommandClickClock = 0
+-- Helper to add thin black outline to text labels/boxes
+local function applyThinBlackOutline(textObj, thickness)
+    if not textObj then return end
+    local existing = textObj:FindFirstChild("ThinBlackOutline")
+    if existing then
+        existing:Destroy()
+    end
+    local stroke = Instance.new("UIStroke")
+    stroke.Name = "ThinBlackOutline"
+    stroke.Color = Color3.fromRGB(0, 0, 0)
+    stroke.Thickness = thickness or 1
+    stroke.Transparency = 0
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+    stroke.Parent = textObj
+end
 
-local function sendPrivateCommand(commandName)
-    local getSuccess, getResponse = pcall(function()
-        return httpRequest({
-            Url = "https://api.jsonbin.io/v3/b/" .. BIN_ID .. "/latest",
-            Method = "GET",
-            Headers = {
-                ["X-Master-Key"] = API_KEY
-            }
-        })
+-- Helper to render overhead chat bubble on a character's head (works even while spamming)
+local function showPlayerChatBubble(playerName, text)
+    if not text or text == "" then return end
+    pcall(function()
+        local targetPlayer = Players:FindFirstChild(playerName) or findPlayerCaseInsensitive(playerName)
+        local char = targetPlayer and targetPlayer.Character
+        local head = char and char:FindFirstChild("Head")
+        if head then
+            ChatService:Chat(head, text, Enum.ChatColor.White)
+        end
     end)
+end
 
-    if getSuccess and getResponse and getResponse.Body then
-        local parseSuccess, data = pcall(function()
-            return HttpService:JSONDecode(getResponse.Body)
+-- JSONBin Request & Serialized Write Queue (no duplicate retries)
+local cachedBinRecord = {
+    messages = {},
+    adminCommand = nil
+}
+
+local function requestJsonBin(method, endpointSuffix, bodyTable)
+    local headers = {
+        ["X-Master-Key"] = API_KEY
+    }
+    local payload = {
+        Url = "https://api.jsonbin.io/v3/b/" .. BIN_ID .. (endpointSuffix or ""),
+        Method = method,
+        Headers = headers
+    }
+    if bodyTable ~= nil then
+        headers["Content-Type"] = "application/json"
+        payload.Body = HttpService:JSONEncode(bodyTable)
+    end
+
+    local ok, res = pcall(function()
+        return httpRequest(payload)
+    end)
+    if ok and res and (res.StatusCode == nil or (res.StatusCode >= 200 and res.StatusCode < 300)) then
+        return true, res
+    end
+    return false, nil
+end
+
+local function fetchLatestBinRecord()
+    local ok, res = requestJsonBin("GET", "/latest", nil)
+    if ok and res and res.Body then
+        local parsedOk, decoded = pcall(function()
+            return HttpService:JSONDecode(res.Body)
         end)
+        if parsedOk and type(decoded) == "table" and type(decoded.record) == "table" then
+            cachedBinRecord.messages = type(decoded.record.messages) == "table" and decoded.record.messages or cachedBinRecord.messages
+            cachedBinRecord.adminCommand = decoded.record.adminCommand
+            return true, cachedBinRecord
+        end
+    end
+    return false, cachedBinRecord
+end
 
-        local record = (parseSuccess and data and data.record) or {}
-        local messages = record.messages or {}
-        local cmdId = tostring(os.clock()) .. "_" .. tostring(math.random(100000, 999999))
+local writeQueue = {}
+local isProcessingQueue = false
 
+local function enqueueBinMutation(mutateFn)
+    table.insert(writeQueue, mutateFn)
+    if isProcessingQueue then return end
+    isProcessingQueue = true
+
+    task.spawn(function()
+        while #writeQueue > 0 do
+            local fn = table.remove(writeQueue, 1)
+            pcall(function()
+                fetchLatestBinRecord()
+                local nextPayload = fn(cachedBinRecord)
+                if type(nextPayload) == "table" then
+                    cachedBinRecord.messages = nextPayload.messages or cachedBinRecord.messages
+                    cachedBinRecord.adminCommand = nextPayload.adminCommand
+                    requestJsonBin("PUT", "", {
+                        messages = cachedBinRecord.messages,
+                        adminCommand = cachedBinRecord.adminCommand
+                    })
+                end
+            end)
+        end
+        isProcessingQueue = false
+    end)
+end
+
+-- Sends private admin command without showing anything in chat (spam allowed)
+local function sendPrivateCommand(commandName)
+    enqueueBinMutation(function(record)
+        local messages = {}
+        for i, m in ipairs(record.messages or {}) do
+            messages[i] = m
+        end
+        local cmdId = tostring(os.clock()) .. "_" .. tostring(os.time()) .. "_" .. tostring(math.random(100000, 999999))
         local newCmd = {
             id = cmdId,
             sender = USERNAME,
             command = commandName,
             time = os.time()
         }
-
-        pcall(function()
-            httpRequest({
-                Url = "https://api.jsonbin.io/v3/b/" .. BIN_ID,
-                Method = "PUT",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["X-Master-Key"] = API_KEY
-                },
-                Body = HttpService:JSONEncode({
-                    messages = messages,
-                    adminCommand = newCmd
-                })
-            })
-        end)
-    end
+        return {
+            messages = messages,
+            adminCommand = newCmd
+        }
+    end)
 end
 
 local function dispatchPrivateCommandSafely(commandName)
     if not isAdmin(USERNAME) then return end
-    local now = os.clock()
-    if isSendingCommand or (now - lastCommandClickClock) < 0.35 then
-        return
-    end
-    lastCommandClickClock = now
-    isSendingCommand = true
-    task.spawn(function()
-        pcall(function()
-            sendPrivateCommand(commandName)
-        end)
-        isSendingCommand = false
-    end)
+    sendPrivateCommand(commandName)
 end
 
 StopButton.MouseButton1Click:Connect(function()
@@ -2005,6 +2092,7 @@ UnreadBadge.Text = "0"
 UnreadBadge.Visible = false
 UnreadBadge.ZIndex = 10
 UnreadBadge.Parent = ToggleButton
+applyThinBlackOutline(UnreadBadge, 1)
 
 local BadgeCorner = Instance.new("UICorner")
 BadgeCorner.CornerRadius = UDim.new(1, 0)
@@ -2034,7 +2122,7 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.DisplayOrder = 999999
 ScreenGui.Parent = CoreGui
 
--- Main Chat Frame
+-- Main Chat Frame (Active = true blocks clicks behind GUI)
 local MainFrame = Instance.new("Frame")
 MainFrame.AnchorPoint = Vector2.new(0, 0)
 
@@ -2061,9 +2149,8 @@ else
 end
 
 MainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-MainFrame.BackgroundTransparency = currentSettings.Transparency
 MainFrame.BorderSizePixel = 0
-MainFrame.Active = not isLocked
+MainFrame.Active = true
 MainFrame.Visible = true
 MainFrame.ZIndex = 2
 MainFrame.Parent = ScreenGui
@@ -2072,27 +2159,49 @@ local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 6)
 UICorner.Parent = MainFrame
 
--- Romantic Mode Background Image (Stretch Mode)
+-- Romantic Mode Background Image
 local BackgroundImage = Instance.new("ImageLabel")
 BackgroundImage.Size = UDim2.new(1, 0, 1, 0)
 BackgroundImage.BackgroundTransparency = 1
 BackgroundImage.Image = "rbxassetid://13759502914"
 BackgroundImage.ScaleType = Enum.ScaleType.Stretch
+BackgroundImage.ImageTransparency = currentSettings.Transparency
+BackgroundImage.Active = true
 BackgroundImage.Visible = currentSettings.RomanticMode
-BackgroundImage.ZIndex = 1
+BackgroundImage.ZIndex = 2
 BackgroundImage.Parent = MainFrame
+
+local BgCorner = Instance.new("UICorner")
+BgCorner.CornerRadius = UDim.new(0, 6)
+BgCorner.Parent = BackgroundImage
+
+local function applyTransparencyAndModeVisuals()
+    local t = math.clamp(currentSettings.Transparency, 0, 1)
+    if currentSettings.RomanticMode then
+        MainFrame.BackgroundTransparency = 1
+        BackgroundImage.Visible = true
+        BackgroundImage.ImageTransparency = t
+    else
+        MainFrame.BackgroundTransparency = t
+        BackgroundImage.Visible = false
+        BackgroundImage.ImageTransparency = t
+    end
+end
+applyTransparencyAndModeVisuals()
 
 local UIStroke = Instance.new("UIStroke")
 UIStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or (isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120))
 UIStroke.Thickness = 2
+UIStroke.ZIndex = 4
 UIStroke.Parent = MainFrame
 
--- Settings Menu Frame
+-- Settings Menu Frame (Permanent transparent background)
 local SettingsFrame = Instance.new("ScrollingFrame")
 SettingsFrame.Size = UDim2.new(0, 175, 1, 0)
 SettingsFrame.Position = UDim2.new(1, 6, 0, 0)
 SettingsFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-SettingsFrame.BackgroundTransparency = currentSettings.Transparency
+SettingsFrame.BackgroundTransparency = MENU_TRANSPARENCY
+SettingsFrame.Active = true
 SettingsFrame.Visible = false
 SettingsFrame.ZIndex = 20
 SettingsFrame.CanvasSize = UDim2.new(0, 0, 0, 190)
@@ -2113,13 +2222,14 @@ SettingsList.SortOrder = Enum.SortOrder.LayoutOrder
 SettingsList.Padding = UDim.new(0, 6)
 SettingsList.Parent = SettingsFrame
 
--- Commands Menu Frame (👤)
+-- Commands Menu Frame (👤) (Permanent transparent background)
 local CommandsFrame = Instance.new("ScrollingFrame")
 CommandsFrame.Size = UDim2.new(0, 130, 0, 240)
 CommandsFrame.Position = UDim2.new(1, 6, 0, 0)
 CommandsFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-CommandsFrame.BackgroundTransparency = currentSettings.Transparency
+CommandsFrame.BackgroundTransparency = MENU_TRANSPARENCY
 CommandsFrame.BorderSizePixel = 0
+CommandsFrame.Active = true
 CommandsFrame.Visible = false
 CommandsFrame.CanvasSize = UDim2.new(0, 0, 0, 376)
 CommandsFrame.ScrollBarThickness = 2
@@ -2145,6 +2255,7 @@ CommandsTitle.Font = Enum.Font.SourceSansBold
 CommandsTitle.Text = "Commands"
 CommandsTitle.ZIndex = 26
 CommandsTitle.Parent = CommandsFrame
+applyThinBlackOutline(CommandsTitle, 1)
 
 local UNIFIED_CMD_COLOR = Color3.fromRGB(255, 105, 180)
 
@@ -2158,8 +2269,10 @@ local function createCommandButton(labelText, yPos)
     btn.Font = Enum.Font.SourceSansBold
     btn.Text = labelText
     btn.BorderSizePixel = 0
+    btn.Active = true
     btn.ZIndex = 26
     btn.Parent = CommandsFrame
+    applyThinBlackOutline(btn, 1)
 
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 5)
@@ -2190,6 +2303,7 @@ local function createSettingLabel(text)
     lbl.Text = text .. "  "
     lbl.ZIndex = 21
     lbl.Parent = SettingsFrame
+    applyThinBlackOutline(lbl, 1)
     return lbl
 end
 
@@ -2203,6 +2317,7 @@ local function createSlider(titlePrefix, minVal, maxVal, currentVal, onSlideChan
     sliderBar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
     sliderBar.BackgroundTransparency = 0.3
     sliderBar.BorderSizePixel = 0
+    sliderBar.Active = true
     sliderBar.ZIndex = 21
     sliderBar.Parent = SettingsFrame
     
@@ -2315,9 +2430,9 @@ createSlider("الشفافية", 10, 90, math.floor(currentSettings.Transparency
     function(val)
         local trans = val / 100
         currentSettings.Transparency = trans
-        MainFrame.BackgroundTransparency = trans
-        SettingsFrame.BackgroundTransparency = trans
-        CommandsFrame.BackgroundTransparency = trans
+        applyTransparencyAndModeVisuals()
+        SettingsFrame.BackgroundTransparency = MENU_TRANSPARENCY
+        CommandsFrame.BackgroundTransparency = MENU_TRANSPARENCY
     end,
     function(val)
         saveSettingsFile()
@@ -2333,8 +2448,10 @@ regionToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 regionToggleBtn.TextSize = 10
 regionToggleBtn.Font = Enum.Font.SourceSansBold
 regionToggleBtn.Text = "اظهار الدولة: " .. (currentSettings.ShowRegion and "ON" or "OFF")
+regionToggleBtn.Active = true
 regionToggleBtn.ZIndex = 21
 regionToggleBtn.Parent = SettingsFrame
+applyThinBlackOutline(regionToggleBtn, 1)
 
 local regCorner = Instance.new("UICorner") regCorner.CornerRadius = UDim.new(0, 4) regCorner.Parent = regionToggleBtn
 
@@ -2354,8 +2471,10 @@ romanticToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 romanticToggleBtn.TextSize = 10
 romanticToggleBtn.Font = Enum.Font.SourceSansBold
 romanticToggleBtn.Text = "الوضع الرومنسي: " .. (currentSettings.RomanticMode and "ON" or "OFF")
+romanticToggleBtn.Active = true
 romanticToggleBtn.ZIndex = 21
 romanticToggleBtn.Parent = SettingsFrame
+applyThinBlackOutline(romanticToggleBtn, 1)
 
 local romCorner = Instance.new("UICorner") romCorner.CornerRadius = UDim.new(0, 4) romCorner.Parent = romanticToggleBtn
 
@@ -2364,7 +2483,9 @@ romanticToggleBtn.MouseButton1Click:Connect(function()
     romanticToggleBtn.BackgroundColor3 = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(170, 0, 0)
     romanticToggleBtn.Text = "الوضع الرومنسي: " .. (currentSettings.RomanticMode and "ON" or "OFF")
     
-    BackgroundImage.Visible = currentSettings.RomanticMode
+    applyTransparencyAndModeVisuals()
+    SettingsFrame.BackgroundTransparency = MENU_TRANSPARENCY
+    CommandsFrame.BackgroundTransparency = MENU_TRANSPARENCY
     UIStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or (isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120))
     SettingsStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or (isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120))
     CommandsStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or (isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120))
@@ -2379,6 +2500,7 @@ LockButton.Position = UDim2.new(1, -28, 0, 4)
 LockButton.BackgroundTransparency = 1
 LockButton.Text = isLocked and "🔒" or "🔓"
 LockButton.TextSize = 14
+LockButton.Active = true
 LockButton.ZIndex = 5
 LockButton.Parent = MainFrame
 
@@ -2389,6 +2511,7 @@ SettingsButton.Position = UDim2.new(1, -54, 0, 4)
 SettingsButton.BackgroundTransparency = 1
 SettingsButton.Text = "⚙️"
 SettingsButton.TextSize = 14
+SettingsButton.Active = true
 SettingsButton.ZIndex = 5
 SettingsButton.Parent = MainFrame
 
@@ -2399,6 +2522,7 @@ CommandsButton.Position = UDim2.new(1, -80, 0, 4)
 CommandsButton.BackgroundTransparency = 1
 CommandsButton.Text = "👤"
 CommandsButton.TextSize = 14
+CommandsButton.Active = true
 CommandsButton.ZIndex = 5
 CommandsButton.Parent = MainFrame
 
@@ -2416,12 +2540,13 @@ CommandsButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Invisible Extended Drag Bar
+-- Invisible Extended Drag Bar (Active = true blocks clicks behind top bar)
 local DragBar = Instance.new("TextButton")
 DragBar.Size = UDim2.new(1, -82, 0, 30)
 DragBar.Position = UDim2.new(0, 0, 0, 0)
 DragBar.BackgroundTransparency = 1
 DragBar.Text = ""
+DragBar.Active = true
 DragBar.ZIndex = 4
 DragBar.Parent = MainFrame
 
@@ -2481,21 +2606,20 @@ LockButton.MouseButton1Click:Connect(function()
     if isLocked then
         LockButton.Text = "🔒"
         UIStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(70, 70, 70)
-        MainFrame.Active = false
         SettingsFrame.Visible = false
         CommandsFrame.Visible = false
     else
         LockButton.Text = "🔓"
         UIStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(120, 120, 120)
-        MainFrame.Active = true
     end
+    MainFrame.Active = true
     
     if writefile then
         pcall(function() writefile(LOCK_SAVE_FILE, HttpService:JSONEncode({Locked = isLocked})) end)
     end
 end)
 
--- Chat Log ScrollingFrame
+-- Chat Log ScrollingFrame (Active = true blocks clicks behind chat area)
 ChatScroll = Instance.new("ScrollingFrame")
 ChatScroll.Size = UDim2.new(1, -16, 1, -50)
 ChatScroll.Position = UDim2.new(0, 8, 0, 6)
@@ -2503,6 +2627,7 @@ ChatScroll.BackgroundTransparency = 1
 ChatScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 ChatScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 ChatScroll.ScrollBarThickness = 3
+ChatScroll.Active = true
 ChatScroll.ZIndex = 3
 ChatScroll.Parent = MainFrame
 
@@ -2523,8 +2648,10 @@ TextBox.Text = ""
 TextBox.TextSize = currentSettings.TextSize
 TextBox.Font = Enum.Font.SourceSansBold
 TextBox.ClearTextOnFocus = false
+TextBox.Active = true
 TextBox.ZIndex = 3
 TextBox.Parent = MainFrame
+applyThinBlackOutline(TextBox, 1)
 
 local BoxCorner = Instance.new("UICorner")
 BoxCorner.CornerRadius = UDim.new(0, 4)
@@ -2538,22 +2665,13 @@ SendButton.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 SendButton.BackgroundTransparency = 0.4
 SendButton.Image = "rbxassetid://87523181864295"
 SendButton.ScaleType = Enum.ScaleType.Fit
+SendButton.Active = true
 SendButton.ZIndex = 3
 SendButton.Parent = MainFrame
 
 local SendCorner = Instance.new("UICorner")
 SendCorner.CornerRadius = UDim.new(0, 4)
 SendCorner.Parent = SendButton
-
--- Toggle Button Click Event (Clears unread counter when opened)
-ToggleButton.MouseButton1Click:Connect(function()
-    MainFrame.Visible = not MainFrame.Visible
-    if MainFrame.Visible then
-        unreadCount = 0
-        UnreadBadge.Text = "0"
-        UnreadBadge.Visible = false
-    end
-end)
 
 local function scrollToBottom()
     task.defer(function()
@@ -2567,6 +2685,7 @@ local function addMessage(sender, text, thumbUrl, regionCode)
     local MessageContainer = Instance.new("Frame")
     MessageContainer.Size = UDim2.new(1, 0, 0, 26)
     MessageContainer.BackgroundTransparency = 1
+    MessageContainer.Active = true
     MessageContainer.ZIndex = 3
     MessageContainer.Parent = ChatScroll
 
@@ -2604,199 +2723,177 @@ local function addMessage(sender, text, thumbUrl, regionCode)
     TextLabel.RichText = true
     TextLabel.ZIndex = 3
     TextLabel.Parent = MessageContainer
+    applyThinBlackOutline(TextLabel, 1)
     
     scrollToBottom()
 end
 
 local function fetchMessages()
-    local success, response = pcall(function()
-        return httpRequest({
-            Url = "https://api.jsonbin.io/v3/b/" .. BIN_ID .. "/latest",
-            Method = "GET",
-            Headers = {
-                ["X-Master-Key"] = API_KEY
-            }
-        })
-    end)
-    
-    if success and response and response.Body then
-        local dataSuccess, data = pcall(function()
-            return HttpService:JSONDecode(response.Body)
-        end)
+    local success, rec = fetchLatestBinRecord()
+    if success and rec then
+        local messages = rec.messages or {}
+        local adminCmd = rec.adminCommand
         
-        if dataSuccess and data and data.record then
-            local messages = data.record.messages or {}
-            local adminCmd = data.record.adminCommand
-            
-            for _, child in ipairs(ChatScroll:GetChildren()) do
-                if child:IsA("Frame") then child:Destroy() end
-            end
-            
-            for _, msg in ipairs(messages) do
-                addMessage(msg.user, msg.text, msg.thumb, msg.region)
-            end
+        for _, child in ipairs(ChatScroll:GetChildren()) do
+            if child:IsA("Frame") then child:Destroy() end
+        end
+        
+        for _, msg in ipairs(messages) do
+            addMessage(msg.user, msg.text, msg.thumb, msg.region)
+        end
 
-            -- Private admin command listener (hidden from public chat messages)
-            if adminCmd and type(adminCmd) == "table" and adminCmd.id then
-                if isInitialLoad then
-                    lastProcessedCommandId = adminCmd.id
-                elseif adminCmd.id ~= lastProcessedCommandId then
-                    lastProcessedCommandId = adminCmd.id
-                    if isAdmin(USERNAME) and isAdmin(adminCmd.sender) then
-                        if adminCmd.command == "Hug!" then
-                            task.spawn(function()
-                                triggerPairedEmoteSequence(adminCmd.sender, HUG_EMOTES, nil, "hug")
-                            end)
-                        elseif adminCmd.command == "Bring!" then
-                            task.spawn(function()
-                                triggerBringSequence(adminCmd.sender)
-                            end)
-                        elseif adminCmd.command == "Kiss!" then
-                            task.spawn(function()
-                                triggerPairedEmoteSequence(adminCmd.sender, KISS_EMOTES, { id = KISS_SOUND_ID, mode = "loop" }, "kiss")
-                            end)
-                        elseif adminCmd.command == "KissHug!" then
-                            task.spawn(function()
-                                triggerPairedEmoteSequence(adminCmd.sender, KISS_HUG_EMOTES, { id = KISS_SOUND_ID, mode = "loop" }, "kisshug")
-                            end)
-                        elseif adminCmd.command == "Stomp!" then
-                            task.spawn(function()
-                                triggerPairedEmoteSequence(adminCmd.sender, STOMP_EMOTES, nil, "stomp")
-                            end)
-                        elseif adminCmd.command == "Slap!" then
-                            task.spawn(function()
-                                triggerPairedEmoteSequence(adminCmd.sender, SLAP_EMOTES, { id = SLAP_SOUND_ID, mode = "loop" }, "slap")
-                            end)
-                        elseif adminCmd.command == "RomanticDance!" then
-                            task.spawn(function()
-                                triggerPairedEmoteSequence(adminCmd.sender, ROMANTIC_DANCE_EMOTES, nil, "romanticdance")
-                            end)
-                        elseif adminCmd.command == "Yummy!" then
-                            task.spawn(function()
-                                triggerPairedEmoteSequence(adminCmd.sender, YUMMY_EMOTES, { id = YUMMY_SOUND_ID, mode = "every1_35s" }, "yummy")
-                            end)
-                        elseif adminCmd.command == "Lick!" then
-                            task.spawn(function()
-                                triggerPairedEmoteSequence(adminCmd.sender, LICK_EMOTES, { id = LICK_SOUND_ID, mode = "loop" }, "lick")
-                            end)
-                        elseif adminCmd.command == "Strip!" then
-                            task.spawn(function()
-                                triggerStripClothesSequence()
-                            end)
-                        elseif adminCmd.command == "Unstrip!" then
-                            task.spawn(function()
-                                restoreClothesOnly()
-                            end)
-                        elseif adminCmd.command == "Stop!" then
-                            task.spawn(function()
-                                unfreezeAction(true)
-                            end)
-                        end
-                    end
-                end
-            end
-            
-            if #messages > 0 then
-                local latestMsg = messages[#messages]
-                local latestMsgId = latestMsg.user .. "_" .. latestMsg.text .. "_" .. #messages
-                
-                if isInitialLoad then
-                    lastShownMessageId = latestMsgId
-                    isInitialLoad = false
-                else
-                    if latestMsgId ~= lastShownMessageId
-                        and latestMsg.text ~= "1/#;"
-                        and latestMsg.text ~= "Hug!"
-                        and latestMsg.text ~= "Bring!"
-                        and latestMsg.text ~= "Kiss!"
-                        and latestMsg.text ~= "KissHug!"
-                        and latestMsg.text ~= "Stomp!"
-                        and latestMsg.text ~= "Slap!"
-                        and latestMsg.text ~= "RomanticDance!"
-                        and latestMsg.text ~= "Yummy!"
-                        and latestMsg.text ~= "Lick!"
-                        and latestMsg.text ~= "Strip!"
-                        and latestMsg.text ~= "Unstrip!"
-                        and latestMsg.text ~= "Stop!" then
-                        lastShownMessageId = latestMsgId
-                        
-                        -- Increment unread badge if chat window is toggled off
-                        if not MainFrame.Visible and latestMsg.user ~= USERNAME then
-                            unreadCount = unreadCount + 1
-                            UnreadBadge.Text = tostring(unreadCount)
-                            UnreadBadge.Visible = true
-                        end
-                        
-                        pcall(function()
-                            local targetPlayer = Players:FindFirstChild(latestMsg.user)
-                            if targetPlayer and targetPlayer.Character then
-                                local head = targetPlayer.Character:FindFirstChild("Head")
-                                if head then
-                                    ChatService:Chat(head, latestMsg.text, Enum.ChatColor.White)
-                                end
-                            end
+        -- Private admin command listener (hidden from public chat messages)
+        if adminCmd and type(adminCmd) == "table" and adminCmd.id then
+            if isInitialLoad then
+                lastProcessedCommandId = adminCmd.id
+            elseif adminCmd.id ~= lastProcessedCommandId then
+                lastProcessedCommandId = adminCmd.id
+                if isAdmin(USERNAME) and isAdmin(adminCmd.sender) then
+                    teleportNonSenderToInitiator(adminCmd.sender)
+                    if adminCmd.command == "Hug!" then
+                        task.spawn(function()
+                            triggerPairedEmoteSequence(adminCmd.sender, HUG_EMOTES, nil, "hug")
+                        end)
+                    elseif adminCmd.command == "Bring!" then
+                        task.spawn(function()
+                            triggerBringSequence(adminCmd.sender)
+                        end)
+                    elseif adminCmd.command == "Kiss!" then
+                        task.spawn(function()
+                            triggerPairedEmoteSequence(adminCmd.sender, KISS_EMOTES, { id = KISS_SOUND_ID, mode = "loop" }, "kiss")
+                        end)
+                    elseif adminCmd.command == "KissHug!" then
+                        task.spawn(function()
+                            triggerPairedEmoteSequence(adminCmd.sender, KISS_HUG_EMOTES, { id = KISS_SOUND_ID, mode = "loop" }, "kisshug")
+                        end)
+                    elseif adminCmd.command == "Stomp!" then
+                        task.spawn(function()
+                            triggerPairedEmoteSequence(adminCmd.sender, STOMP_EMOTES, nil, "stomp")
+                        end)
+                    elseif adminCmd.command == "Slap!" then
+                        task.spawn(function()
+                            triggerPairedEmoteSequence(adminCmd.sender, SLAP_EMOTES, { id = SLAP_SOUND_ID, mode = "loop" }, "slap")
+                        end)
+                    elseif adminCmd.command == "RomanticDance!" then
+                        task.spawn(function()
+                            triggerPairedEmoteSequence(adminCmd.sender, ROMANTIC_DANCE_EMOTES, nil, "romanticdance")
+                        end)
+                    elseif adminCmd.command == "Yummy!" then
+                        task.spawn(function()
+                            triggerPairedEmoteSequence(adminCmd.sender, YUMMY_EMOTES, { id = YUMMY_SOUND_ID, mode = "every1_35s" }, "yummy")
+                        end)
+                    elseif adminCmd.command == "Lick!" then
+                        task.spawn(function()
+                            triggerPairedEmoteSequence(adminCmd.sender, LICK_EMOTES, { id = LICK_SOUND_ID, mode = "loop" }, "lick")
+                        end)
+                    elseif adminCmd.command == "Strip!" then
+                        task.spawn(function()
+                            triggerStripClothesSequence()
+                        end)
+                    elseif adminCmd.command == "Unstrip!" then
+                        task.spawn(function()
+                            restoreClothesOnly()
+                        end)
+                    elseif adminCmd.command == "Stop!" then
+                        task.spawn(function()
+                            unfreezeAction(true)
                         end)
                     end
                 end
-            else
-                isInitialLoad = false
             end
+        end
+        
+        if #messages > 0 then
+            local latestMsg = messages[#messages]
+            local latestMsgId = latestMsg.user .. "_" .. latestMsg.text .. "_" .. #messages
+            
+            if isInitialLoad then
+                lastShownMessageId = latestMsgId
+                isInitialLoad = false
+            else
+                if latestMsgId ~= lastShownMessageId
+                    and latestMsg.text ~= "1/#;"
+                    and latestMsg.text ~= "Hug!"
+                    and latestMsg.text ~= "Bring!"
+                    and latestMsg.text ~= "Kiss!"
+                    and latestMsg.text ~= "KissHug!"
+                    and latestMsg.text ~= "Stomp!"
+                    and latestMsg.text ~= "Slap!"
+                    and latestMsg.text ~= "RomanticDance!"
+                    and latestMsg.text ~= "Yummy!"
+                    and latestMsg.text ~= "Lick!"
+                    and latestMsg.text ~= "Strip!"
+                    and latestMsg.text ~= "Unstrip!"
+                    and latestMsg.text ~= "Stop!" then
+                    lastShownMessageId = latestMsgId
+                    
+                    -- Increment unread badge if chat window is toggled off
+                    if not MainFrame.Visible and latestMsg.user ~= USERNAME then
+                        unreadCount = unreadCount + 1
+                        UnreadBadge.Text = tostring(unreadCount)
+                        UnreadBadge.Visible = true
+                    end
+                    
+                    -- Show overhead chat bubble on sender (skip self since self bubble spawns immediately on send/spam)
+                    if string.lower(latestMsg.user) ~= string.lower(USERNAME) then
+                        showPlayerChatBubble(latestMsg.user, latestMsg.text)
+                    end
+                end
+            end
+        else
+            isInitialLoad = false
         end
     end
 end
 
--- Instant sending method (keeps public chat messages separate from private admin commands)
+-- Toggle Button Click Event (Clears unread counter + syncs immediately when opened)
+ToggleButton.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+    if MainFrame.Visible then
+        unreadCount = 0
+        UnreadBadge.Text = "0"
+        UnreadBadge.Visible = false
+        if not isProcessingQueue and #writeQueue == 0 then
+            task.spawn(function()
+                pcall(fetchMessages)
+            end)
+        end
+    end
+end)
+
+-- Instant sending method with queue + spam support + self chat bubble
 local function sendMessage(text)
     if text == "" then return end
-    
-    local getSuccess, getResponse = pcall(function()
-        return httpRequest({
-            Url = "https://api.jsonbin.io/v3/b/" .. BIN_ID .. "/latest",
-            Method = "GET",
-            Headers = {
-                ["X-Master-Key"] = API_KEY
-            }
+
+    addMessage(USERNAME, text, MY_THUMBNAIL, playerRegionCode)
+    showPlayerChatBubble(USERNAME, text)
+
+    enqueueBinMutation(function(record)
+        local messages = {}
+        for i, m in ipairs(record.messages or {}) do
+            messages[i] = m
+        end
+        table.insert(messages, {
+            user = USERNAME,
+            text = text,
+            thumb = MY_THUMBNAIL,
+            region = playerRegionCode
         })
-    end)
-    
-    if getSuccess and getResponse and getResponse.Body then
-        local parseSuccess, data = pcall(function()
-            return HttpService:JSONDecode(getResponse.Body)
-        end)
-        
-        local record = (parseSuccess and data and data.record) or {}
-        local messages = record.messages or {}
-        
-        table.insert(messages, {user = USERNAME, text = text, thumb = MY_THUMBNAIL, region = playerRegionCode})
-        if #messages > 50 then
+        while #messages > 50 do
             table.remove(messages, 1)
         end
-        
-        pcall(function()
-            httpRequest({
-                Url = "https://api.jsonbin.io/v3/b/" .. BIN_ID,
-                Method = "PUT",
-                Headers = {
-                    ["Content-Type"] = "application/json",
-                    ["X-Master-Key"] = API_KEY
-                },
-                Body = HttpService:JSONEncode({
-                    messages = messages,
-                    adminCommand = record.adminCommand
-                })
-            })
-        end)
-    end
+        return {
+            messages = messages,
+            adminCommand = record.adminCommand
+        }
+    end)
 end
 
 local function triggerSend()
     local txt = TextBox.Text
     if txt ~= "" then
         TextBox.Text = ""
-        task.spawn(function()
-            sendMessage(txt)
-            fetchMessages()
-        end)
+        sendMessage(txt)
     end
 end
 
@@ -2888,54 +2985,15 @@ task.spawn(function()
     end
 end)
 
--- Background Heartbeat Task (preserves adminCommand)
-task.spawn(function()
-    while true do
-        task.wait(5)
-        pcall(function()
-            local getSuccess, getResponse = pcall(function()
-                return httpRequest({
-                    Url = "https://api.jsonbin.io/v3/b/" .. BIN_ID .. "/latest",
-                    Method = "GET",
-                    Headers = {
-                        ["X-Master-Key"] = API_KEY
-                    }
-                })
-            end)
-            if getSuccess and getResponse and getResponse.Body then
-                local parseSuccess, data = pcall(function() return HttpService:JSONDecode(getResponse.Body) end)
-                local record = (parseSuccess and data and data.record) or {}
-                local messages = record.messages or {}
-                
-                local lastMsg = messages[#messages]
-                if not lastMsg or lastMsg.text ~= "1/#;" then
-                    table.insert(messages, {user = USERNAME, text = "1/#;", thumb = MY_THUMBNAIL, region = playerRegionCode})
-                    if #messages > 50 then table.remove(messages, 1) end
-                    
-                    httpRequest({
-                        Url = "https://api.jsonbin.io/v3/b/" .. BIN_ID,
-                        Method = "PUT",
-                        Headers = {
-                            ["Content-Type"] = "application/json",
-                            ["X-Master-Key"] = API_KEY
-                        },
-                        Body = HttpService:JSONEncode({
-                            messages = messages,
-                            adminCommand = record.adminCommand
-                        })
-                    })
-                end
-            end
-        end)
-    end
-end)
-
--- Polling loop to sync messages and private commands
+-- Request-conserving polling loop (pauses when chat is closed unless user is admin)
 task.spawn(function()
     fetchMessages()
     while true do
-        pcall(fetchMessages)
-        task.wait(1.5)
+        local shouldPoll = MainFrame.Visible or isAdmin(USERNAME)
+        if shouldPoll and not isProcessingQueue and #writeQueue == 0 then
+            pcall(fetchMessages)
+        end
+        task.wait(MainFrame.Visible and POLL_INTERVAL_OPEN or POLL_INTERVAL_CLOSED)
     end
 end)
 
