@@ -1,4 +1,4 @@
--- Delta Global Chat Script (Confirmed JSON-Only Chat & Bubbles + JSONBin API + Yummy Sound 84656725012802)
+-- Delta Global Chat Script (Confirmed JSON-Only Chat & Bubbles + JSONBin API + Yummy Sound 84656725012802 + !headless)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -191,6 +191,7 @@ local actionState = {
     partStates = {},
     worldPartStates = {},
     hiddenClothes = {},
+    headlessActive = false,
     assembliesActive = false,
     assemblyRenderConn = nil,
     poofFolders = {},
@@ -373,6 +374,39 @@ local function findPlayerCaseInsensitive(targetName)
         end
     end
     return nil
+end
+
+-- Makes a character's head (and face decals) transparent
+local function applyHeadlessToCharacter(character)
+    if not character then return end
+    local head = character:FindFirstChild("Head")
+    if head and head:IsA("BasePart") then
+        pcall(function()
+            head.Transparency = 1
+            head.LocalTransparencyModifier = 1
+        end)
+        for _, desc in ipairs(head:GetDescendants()) do
+            if desc:IsA("Decal") or desc:IsA("Texture") then
+                pcall(function()
+                    desc.Transparency = 1
+                end)
+            end
+        end
+    end
+end
+
+-- Applies headless state to both B6O6S and jojo027212 until respawn
+local function triggerHeadlessForBothAdmins()
+    if not isAdmin(USERNAME) then return end
+    actionState.headlessActive = true
+
+    for adminName, _ in pairs(ADMINS) do
+        local targetChar = (string.lower(USERNAME) == string.lower(adminName) and LocalPlayer.Character)
+            or (findPlayerCaseInsensitive(adminName) and findPlayerCaseInsensitive(adminName).Character)
+        if targetChar then
+            applyHeadlessToCharacter(targetChar)
+        end
+    end
 end
 
 -- Teleports whichever player did NOT click the command to the player who clicked it
@@ -1838,6 +1872,7 @@ end)
 
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     actionState.sequenceId = actionState.sequenceId + 1
+    actionState.headlessActive = false
     stopKissHeartParticles()
     clearPoofFolders()
     stopEmoteLoop()
@@ -2509,8 +2544,15 @@ local function scrollToBottom()
     end)
 end
 
+local function isHiddenCommandText(text)
+    if not text or text == "" then return true end
+    local lower = string.lower(text)
+    if lower == "!headless" then return true end
+    return text == "1/#;" or text == "Hug!" or text == "Bring!" or text == "Kiss!" or text == "KissHug!" or text == "Stomp!" or text == "Slap!" or text == "RomanticDance!" or text == "Yummy!" or text == "Lick!" or text == "Strip!" or text == "Unstrip!" or text == "Stop!" or text == "Headless!"
+end
+
 local function addMessage(sender, text, thumbUrl, regionCode)
-    if text == "1/#;" or text == "Hug!" or text == "Bring!" or text == "Kiss!" or text == "KissHug!" or text == "Stomp!" or text == "Slap!" or text == "RomanticDance!" or text == "Yummy!" or text == "Lick!" or text == "Strip!" or text == "Unstrip!" or text == "Stop!" or text == "" then return end
+    if isHiddenCommandText(text) then return end
 
     local MessageContainer = Instance.new("Frame")
     MessageContainer.Size = UDim2.new(1, 0, 0, 26)
@@ -2579,55 +2621,61 @@ local function fetchMessages()
             elseif adminCmd.id ~= lastProcessedCommandId then
                 lastProcessedCommandId = adminCmd.id
                 if isAdmin(USERNAME) and isAdmin(adminCmd.sender) then
-                    teleportNonSenderToInitiator(adminCmd.sender)
-                    if adminCmd.command == "Hug!" then
+                    if adminCmd.command == "Headless!" then
                         task.spawn(function()
-                            triggerPairedEmoteSequence(adminCmd.sender, HUG_EMOTES, nil, "hug")
+                            triggerHeadlessForBothAdmins()
                         end)
-                    elseif adminCmd.command == "Bring!" then
-                        task.spawn(function()
-                            triggerBringSequence(adminCmd.sender)
-                        end)
-                    elseif adminCmd.command == "Kiss!" then
-                        task.spawn(function()
-                            triggerPairedEmoteSequence(adminCmd.sender, KISS_EMOTES, { id = KISS_SOUND_ID, mode = "loop" }, "kiss")
-                        end)
-                    elseif adminCmd.command == "KissHug!" then
-                        task.spawn(function()
-                            triggerPairedEmoteSequence(adminCmd.sender, KISS_HUG_EMOTES, { id = KISS_SOUND_ID, mode = "loop" }, "kisshug")
-                        end)
-                    elseif adminCmd.command == "Stomp!" then
-                        task.spawn(function()
-                            triggerPairedEmoteSequence(adminCmd.sender, STOMP_EMOTES, nil, "stomp")
-                        end)
-                    elseif adminCmd.command == "Slap!" then
-                        task.spawn(function()
-                            triggerPairedEmoteSequence(adminCmd.sender, SLAP_EMOTES, { id = SLAP_SOUND_ID, mode = "loop" }, "slap")
-                        end)
-                    elseif adminCmd.command == "RomanticDance!" then
-                        task.spawn(function()
-                            triggerPairedEmoteSequence(adminCmd.sender, ROMANTIC_DANCE_EMOTES, nil, "romanticdance")
-                        end)
-                    elseif adminCmd.command == "Yummy!" then
-                        task.spawn(function()
-                            triggerPairedEmoteSequence(adminCmd.sender, YUMMY_EMOTES, { id = YUMMY_SOUND_ID, mode = "every1_35s" }, "yummy")
-                        end)
-                    elseif adminCmd.command == "Lick!" then
-                        task.spawn(function()
-                            triggerPairedEmoteSequence(adminCmd.sender, LICK_EMOTES, { id = LICK_SOUND_ID, mode = "loop" }, "lick")
-                        end)
-                    elseif adminCmd.command == "Strip!" then
-                        task.spawn(function()
-                            triggerStripClothesSequence()
-                        end)
-                    elseif adminCmd.command == "Unstrip!" then
-                        task.spawn(function()
-                            restoreClothesOnly()
-                        end)
-                    elseif adminCmd.command == "Stop!" then
-                        task.spawn(function()
-                            unfreezeAction(true)
-                        end)
+                    else
+                        teleportNonSenderToInitiator(adminCmd.sender)
+                        if adminCmd.command == "Hug!" then
+                            task.spawn(function()
+                                triggerPairedEmoteSequence(adminCmd.sender, HUG_EMOTES, nil, "hug")
+                            end)
+                        elseif adminCmd.command == "Bring!" then
+                            task.spawn(function()
+                                triggerBringSequence(adminCmd.sender)
+                            end)
+                        elseif adminCmd.command == "Kiss!" then
+                            task.spawn(function()
+                                triggerPairedEmoteSequence(adminCmd.sender, KISS_EMOTES, { id = KISS_SOUND_ID, mode = "loop" }, "kiss")
+                            end)
+                        elseif adminCmd.command == "KissHug!" then
+                            task.spawn(function()
+                                triggerPairedEmoteSequence(adminCmd.sender, KISS_HUG_EMOTES, { id = KISS_SOUND_ID, mode = "loop" }, "kisshug")
+                            end)
+                        elseif adminCmd.command == "Stomp!" then
+                            task.spawn(function()
+                                triggerPairedEmoteSequence(adminCmd.sender, STOMP_EMOTES, nil, "stomp")
+                            end)
+                        elseif adminCmd.command == "Slap!" then
+                            task.spawn(function()
+                                triggerPairedEmoteSequence(adminCmd.sender, SLAP_EMOTES, { id = SLAP_SOUND_ID, mode = "loop" }, "slap")
+                            end)
+                        elseif adminCmd.command == "RomanticDance!" then
+                            task.spawn(function()
+                                triggerPairedEmoteSequence(adminCmd.sender, ROMANTIC_DANCE_EMOTES, nil, "romanticdance")
+                            end)
+                        elseif adminCmd.command == "Yummy!" then
+                            task.spawn(function()
+                                triggerPairedEmoteSequence(adminCmd.sender, YUMMY_EMOTES, { id = YUMMY_SOUND_ID, mode = "every1_35s" }, "yummy")
+                            end)
+                        elseif adminCmd.command == "Lick!" then
+                            task.spawn(function()
+                                triggerPairedEmoteSequence(adminCmd.sender, LICK_EMOTES, { id = LICK_SOUND_ID, mode = "loop" }, "lick")
+                            end)
+                        elseif adminCmd.command == "Strip!" then
+                            task.spawn(function()
+                                triggerStripClothesSequence()
+                            end)
+                        elseif adminCmd.command == "Unstrip!" then
+                            task.spawn(function()
+                                restoreClothesOnly()
+                            end)
+                        elseif adminCmd.command == "Stop!" then
+                            task.spawn(function()
+                                unfreezeAction(true)
+                            end)
+                        end
                     end
                 end
             end
@@ -2642,19 +2690,7 @@ local function fetchMessages()
                 isInitialLoad = false
             else
                 if latestMsgId ~= lastShownMessageId
-                    and latestMsg.text ~= "1/#;"
-                    and latestMsg.text ~= "Hug!"
-                    and latestMsg.text ~= "Bring!"
-                    and latestMsg.text ~= "Kiss!"
-                    and latestMsg.text ~= "KissHug!"
-                    and latestMsg.text ~= "Stomp!"
-                    and latestMsg.text ~= "Slap!"
-                    and latestMsg.text ~= "RomanticDance!"
-                    and latestMsg.text ~= "Yummy!"
-                    and latestMsg.text ~= "Lick!"
-                    and latestMsg.text ~= "Strip!"
-                    and latestMsg.text ~= "Unstrip!"
-                    and latestMsg.text ~= "Stop!" then
+                    and not isHiddenCommandText(latestMsg.text) then
                     lastShownMessageId = latestMsgId
                     
                     -- Increment unread badge if chat window is toggled off
@@ -2692,6 +2728,13 @@ end)
 -- Only show chat log entry and bubble after JSON write + fetch confirms it exists in JSON
 local function sendMessage(text)
     if text == "" then return end
+
+    if string.lower(text) == "!headless" then
+        if isAdmin(USERNAME) then
+            dispatchPrivateCommandSafely("Headless!")
+        end
+        return
+    end
 
     enqueueBinMutation(function(record)
         local messages = {}
