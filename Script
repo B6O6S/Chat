@@ -1,4 +1,4 @@
--- Delta Global Chat Script (Confirmed JSON-Only Chat & Bubbles + JSONBin API + Yummy Sound 84656725012802 + !headless + Permanent !antisit)
+-- Delta Global Chat Script (Confirmed JSON-Only Chat & Bubbles + JSONBin API + Yummy Sound 84656725012802 + !headless + !antisit)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -20,6 +20,7 @@ local USER_ID = LocalPlayer.UserId
 -- Polling intervals (seconds) to conserve JSONBin requests
 local POLL_INTERVAL_OPEN = 3.5
 local POLL_INTERVAL_CLOSED = 8.0
+local ANTI_SIT_SYNC_INTERVAL = 0.25
 
 -- Permanent background transparency for Settings and Commands menus
 local MENU_TRANSPARENCY = 0.65
@@ -196,6 +197,7 @@ local actionState = {
     antiSitConn = nil,
     antiSitSeatedConn = nil,
     antiSitDescConn = nil,
+    antiSitLoopThread = nil,
     disabledSeats = {},
     assembliesActive = false,
     assemblyRenderConn = nil,
@@ -419,12 +421,22 @@ local function disableSeatPart(seat)
     if actionState.disabledSeats[seat] == nil then
         actionState.disabledSeats[seat] = seat.Disabled
     end
-    pcall(function()
-        seat.Disabled = true
-    end)
+    if not seat.Disabled then
+        pcall(function()
+            seat.Disabled = true
+        end)
+    end
 end
 
-local function enforceAntiSitOnCharacter(character)
+local function disableAllWorkspaceSeats()
+    for _, desc in ipairs(Workspace:GetDescendants()) do
+        if desc:IsA("Seat") or desc:IsA("VehicleSeat") then
+            disableSeatPart(desc)
+        end
+    end
+end
+
+local function ejectCharacterFromSeat(character)
     if not character then return end
     local hum = character:FindFirstChildOfClass("Humanoid")
     if hum then
@@ -432,9 +444,6 @@ local function enforceAntiSitOnCharacter(character)
             hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
             if hum.Sit then
                 hum.Sit = false
-            end
-            if hum.SeatPart then
-                hum.SeatPart = nil
             end
             if hum:GetState() == Enum.HumanoidStateType.Seated then
                 hum:ChangeState(Enum.HumanoidStateType.Running)
@@ -453,9 +462,34 @@ local function enforceAntiSitOnCharacter(character)
     end
 end
 
+local function bindHumanoidAntiSit(char)
+    if not char or not actionState.antiSitActive then return end
+    ejectCharacterFromSeat(char)
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        if actionState.antiSitSeatedConn then
+            pcall(function()
+                actionState.antiSitSeatedConn:Disconnect()
+            end)
+            actionState.antiSitSeatedConn = nil
+        end
+        actionState.antiSitSeatedConn = hum.Seated:Connect(function(activeSit)
+            if actionState.antiSitActive and activeSit then
+                ejectCharacterFromSeat(char)
+            end
+        end)
+    end
+end
+
 local function stopAntiSit()
     actionState.antiSitActive = false
 
+    if actionState.antiSitLoopThread then
+        pcall(function()
+            task.cancel(actionState.antiSitLoopThread)
+        end)
+        actionState.antiSitLoopThread = nil
+    end
     if actionState.antiSitConn then
         pcall(function()
             actionState.antiSitConn:Disconnect()
@@ -483,6 +517,14 @@ local function stopAntiSit()
         end
     end
     actionState.disabledSeats = {}
+
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function()
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+        end)
+    end
 end
 
 local function setAntiSitEnabled(enabled)
@@ -495,12 +537,7 @@ local function setAntiSitEnabled(enabled)
 
     stopAntiSit()
     actionState.antiSitActive = true
-
-    for _, desc in ipairs(Workspace:GetDescendants()) do
-        if desc:IsA("Seat") or desc:IsA("VehicleSeat") then
-            disableSeatPart(desc)
-        end
-    end
+    disableAllWorkspaceSeats()
 
     actionState.antiSitDescConn = Workspace.DescendantAdded:Connect(function(desc)
         if not actionState.antiSitActive then return end
@@ -508,25 +545,6 @@ local function setAntiSitEnabled(enabled)
             disableSeatPart(desc)
         end
     end)
-
-    local function bindHumanoidAntiSit(char)
-        if not char then return end
-        enforceAntiSitOnCharacter(char)
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            if actionState.antiSitSeatedConn then
-                pcall(function()
-                    actionState.antiSitSeatedConn:Disconnect()
-                end)
-                actionState.antiSitSeatedConn = nil
-            end
-            actionState.antiSitSeatedConn = hum.Seated:Connect(function(activeSit)
-                if actionState.antiSitActive and activeSit then
-                    enforceAntiSitOnCharacter(char)
-                end
-            end)
-        end
-    end
 
     bindHumanoidAntiSit(LocalPlayer.Character)
 
@@ -536,8 +554,30 @@ local function setAntiSitEnabled(enabled)
             local targetChar = (string.lower(USERNAME) == string.lower(adminName) and LocalPlayer.Character)
                 or (findPlayerCaseInsensitive(adminName) and findPlayerCaseInsensitive(adminName).Character)
             if targetChar then
-                enforceAntiSitOnCharacter(targetChar)
+                local hum = targetChar:FindFirstChildOfClass("Humanoid")
+                if hum and (hum.Sit or hum:GetState() == Enum.HumanoidStateType.Seated) then
+                    ejectCharacterFromSeat(targetChar)
+                end
             end
+        end
+    end)
+
+    actionState.antiSitLoopThread = task.spawn(function()
+        while actionState.antiSitActive do
+            disableAllWorkspaceSeats()
+            local myChar = LocalPlayer.Character
+            if myChar then
+                local hum = myChar:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    pcall(function()
+                        hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+                    end)
+                    if hum.Sit or hum:GetState() == Enum.HumanoidStateType.Seated then
+                        ejectCharacterFromSeat(myChar)
+                    end
+                end
+            end
+            task.wait(ANTI_SIT_SYNC_INTERVAL)
         end
     end)
 end
@@ -2026,18 +2066,8 @@ LocalPlayer.CharacterAdded:Connect(function(newChar)
         if hum then
             syncBaselineFromHumanoid(hum)
             if actionState.antiSitActive then
-                enforceAntiSitOnCharacter(newChar)
-                if actionState.antiSitSeatedConn then
-                    pcall(function()
-                        actionState.antiSitSeatedConn:Disconnect()
-                    end)
-                    actionState.antiSitSeatedConn = nil
-                end
-                actionState.antiSitSeatedConn = hum.Seated:Connect(function(activeSit)
-                    if actionState.antiSitActive and activeSit then
-                        enforceAntiSitOnCharacter(newChar)
-                    end
-                end)
+                disableAllWorkspaceSeats()
+                bindHumanoidAntiSit(newChar)
             end
         end
         if keepAssemblies then
@@ -2266,7 +2296,7 @@ CommandsTitle.TextSize = 11
 CommandsTitle.Font = Enum.Font.SourceSansBold
 CommandsTitle.Text = "Commands"
 CommandsTitle.ZIndex = 26
-CommandsFrame.Parent = CommandsFrame
+CommandsTitle.Parent = CommandsFrame
 applyThinBlackOutline(CommandsTitle, 1)
 
 local UNIFIED_CMD_COLOR = Color3.fromRGB(255, 105, 180)
