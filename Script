@@ -1,4 +1,4 @@
--- Delta Global Chat Script (Confirmed JSON-Only Chat & Bubbles + JSONBin API + Yummy Sound 84656725012802 + !headless + !antisit)
+-- Delta Global Chat Script (Confirmed JSON-Only Chat & Bubbles + JSONBin API + Yummy Sound 84656725012802 + !headless + Permanent !antisit)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -424,17 +424,20 @@ local function disableSeatPart(seat)
     end)
 end
 
-local function ejectCharacterFromSeat(character)
+local function enforceAntiSitOnCharacter(character)
     if not character then return end
     local hum = character:FindFirstChildOfClass("Humanoid")
     if hum then
         pcall(function()
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
             if hum.Sit then
                 hum.Sit = false
             end
-            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+            if hum.SeatPart then
+                hum.SeatPart = nil
+            end
             if hum:GetState() == Enum.HumanoidStateType.Seated then
-                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+                hum:ChangeState(Enum.HumanoidStateType.Running)
             end
         end)
     end
@@ -480,14 +483,6 @@ local function stopAntiSit()
         end
     end
     actionState.disabledSeats = {}
-
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        pcall(function()
-            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-        end)
-    end
 end
 
 local function setAntiSitEnabled(enabled)
@@ -516,7 +511,7 @@ local function setAntiSitEnabled(enabled)
 
     local function bindHumanoidAntiSit(char)
         if not char then return end
-        ejectCharacterFromSeat(char)
+        enforceAntiSitOnCharacter(char)
         local hum = char:FindFirstChildOfClass("Humanoid")
         if hum then
             if actionState.antiSitSeatedConn then
@@ -527,7 +522,7 @@ local function setAntiSitEnabled(enabled)
             end
             actionState.antiSitSeatedConn = hum.Seated:Connect(function(activeSit)
                 if actionState.antiSitActive and activeSit then
-                    ejectCharacterFromSeat(char)
+                    enforceAntiSitOnCharacter(char)
                 end
             end)
         end
@@ -541,7 +536,7 @@ local function setAntiSitEnabled(enabled)
             local targetChar = (string.lower(USERNAME) == string.lower(adminName) and LocalPlayer.Character)
                 or (findPlayerCaseInsensitive(adminName) and findPlayerCaseInsensitive(adminName).Character)
             if targetChar then
-                ejectCharacterFromSeat(targetChar)
+                enforceAntiSitOnCharacter(targetChar)
             end
         end
     end)
@@ -2031,7 +2026,7 @@ LocalPlayer.CharacterAdded:Connect(function(newChar)
         if hum then
             syncBaselineFromHumanoid(hum)
             if actionState.antiSitActive then
-                ejectCharacterFromSeat(newChar)
+                enforceAntiSitOnCharacter(newChar)
                 if actionState.antiSitSeatedConn then
                     pcall(function()
                         actionState.antiSitSeatedConn:Disconnect()
@@ -2040,7 +2035,7 @@ LocalPlayer.CharacterAdded:Connect(function(newChar)
                 end
                 actionState.antiSitSeatedConn = hum.Seated:Connect(function(activeSit)
                     if actionState.antiSitActive and activeSit then
-                        ejectCharacterFromSeat(newChar)
+                        enforceAntiSitOnCharacter(newChar)
                     end
                 end)
             end
@@ -2271,7 +2266,7 @@ CommandsTitle.TextSize = 11
 CommandsTitle.Font = Enum.Font.SourceSansBold
 CommandsTitle.Text = "Commands"
 CommandsTitle.ZIndex = 26
-CommandsTitle.Parent = CommandsFrame
+CommandsFrame.Parent = CommandsFrame
 applyThinBlackOutline(CommandsTitle, 1)
 
 local UNIFIED_CMD_COLOR = Color3.fromRGB(255, 105, 180)
