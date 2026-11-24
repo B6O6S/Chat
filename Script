@@ -1,4 +1,4 @@
--- Delta Global Chat Script (Updated JSONBin API + Yummy Sound 84656725012802 + Single Kiss Sound)
+-- Delta Global Chat Script (Confirmed JSON-Only Chat & Bubbles + JSONBin API + Yummy Sound 84656725012802)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -221,28 +221,42 @@ local B6_ASSEMBLY_CONFIG = {
     MaxTiltRad = 0.35
 }
 
-local JOJO_ASSEMBLY_CONFIG = {
-    FolderName = "SpawnedJojoTorsoAssembly",
-    ForceSpecialMesh = true,
-    AttachToTargetTorso = true,
-    TargetPart = nil,
-    SpawnCFrame = CFrame.new(0, 5, 0),
-    Anchored = false,
+-- DELTA READY ALL BALLS CLIENT-SIDED (ONLY FOR JOJO027212)
+local JOJO_BALL_CONFIG = {
+    FolderName = "SpawnedJojoBallsRig",
     ReattachOnRespawn = true,
-    YShift = -0.3,
-
     SkinBallSize = 0.7,
-    PinkBallSize = 0.71,
+    SalmonBallSize = 0.71,
     SkinOffset = Vector3.new(0, -0.2, 0),
-    PinkOffset = Vector3.new(0, -0.2, 0),
-    PinkColor = Color3.fromRGB(250, 128, 114),
-
-    JiggleEnabled = true,
-    Stiffness = 140,
-    Damping = 14,
-    ImpulseStrength = 0.045,
-    MaxOffset = 0.14,
-    MaxTiltDeg = 10
+    SalmonOffset = Vector3.new(-0.69, -0.2, 0),
+    StickDistance = 0.69,
+    SalmonColor = Color3.fromRGB(250, 128, 114),
+    ExtraBallSettings = {
+        {
+            name1 = "Ball1_V1",
+            name2 = "Ball2_V1",
+            size = 0.7,
+            initialOffset = Vector3.new(-0.3, 0.8, -0.5),
+            stickDistance = 0.69,
+            color = nil,
+        },
+        {
+            name1 = "Ball1_V2",
+            name2 = "Ball2_V2",
+            size = 0.9,
+            initialOffset = Vector3.new(-0.45, 0, 0.5),
+            stickDistance = 0.85,
+            color = nil,
+        },
+        {
+            name1 = "Ball1_V3",
+            name2 = "Ball2_V3",
+            size = 0.3,
+            initialOffset = Vector3.new(-0.3, 0.800000011920929, -0.71),
+            stickDistance = 0.69,
+            color = Color3.fromRGB(250, 128, 114),
+        },
+    }
 }
 
 local function cfFromArray(t)
@@ -252,34 +266,6 @@ local function cfFromArray(t)
         t[7], t[8], t[9],
         t[10], t[11], t[12]
     )
-end
-
-local function shiftCFrameY(cf, deltaY)
-    local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:GetComponents()
-    return CFrame.new(x, y + deltaY, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
-end
-
-local function clampVector(v, maxLen)
-    local mag = v.Magnitude
-    if mag > maxLen and mag > 0 then
-        return v.Unit * maxLen
-    end
-    return v
-end
-
-local function solvedPart1CFrame(part0, c0, c1)
-    return part0.CFrame * c0 * c1:Inverse()
-end
-
-local function createDecal(spec, parent)
-    local decal = Instance.new("Decal")
-    decal.Name = spec.Name
-    decal.Texture = spec.Texture
-    decal.Face = Enum.NormalId[spec.Face] or Enum.NormalId.Left
-    decal.Transparency = spec.Transparency or 0
-    decal.Color3 = Color3.fromRGB(spec.Color3.r, spec.Color3.g, spec.Color3.b)
-    decal.Parent = parent
-    return decal
 end
 
 local function buildMeshPart(spec, parent, anchored, forceSpecialMesh)
@@ -328,19 +314,6 @@ local function buildMeshPart(spec, parent, anchored, forceSpecialMesh)
     part.CanTouch = false
     part.CanQuery = false
     part.Anchored = anchored
-
-    if spec.Attributes then
-        for k, v in pairs(spec.Attributes) do
-            part:SetAttribute(k, v)
-        end
-    end
-
-    if spec.Decals then
-        for _, dSpec in ipairs(spec.Decals) do
-            createDecal(dSpec, part)
-        end
-    end
-
     part.Parent = parent
 
     pcall(function()
@@ -350,7 +323,7 @@ local function buildMeshPart(spec, parent, anchored, forceSpecialMesh)
     return part
 end
 
-local function createJojoBall(parent, name, size, color, flat)
+local function createJojoBall(parent, name, size, color, sideFlat)
     local ball = Instance.new("Part")
     ball.Name = name
     ball.Shape = Enum.PartType.Ball
@@ -360,32 +333,12 @@ local function createJojoBall(parent, name, size, color, flat)
     ball.CanQuery = false
     ball.Anchored = true
     ball.Massless = true
-    ball.Size = flat and Vector3.new(size * 0.3, size, size) or Vector3.new(size, size, size)
+    ball.Size = sideFlat
+        and Vector3.new(size * 0.3, size, size)
+        or Vector3.new(size, size, size)
     ball.Color = color
     ball.Parent = parent
     return ball
-end
-
-local function resolveLowerTorsoTarget(char, fallbackPart)
-    if char then
-        local lower = char:FindFirstChild("LowerTorso")
-        if lower and lower:IsA("BasePart") then
-            return lower
-        end
-        local torso = char:FindFirstChild("Torso")
-        if torso and torso:IsA("BasePart") then
-            return torso
-        end
-        local upper = char:FindFirstChild("UpperTorso")
-        if upper and upper:IsA("BasePart") then
-            return upper
-        end
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if root and root:IsA("BasePart") then
-            return root
-        end
-    end
-    return fallbackPart
 end
 
 local function weldToPart(name, part0, part1, parentInstance)
@@ -396,20 +349,6 @@ local function weldToPart(name, part0, part1, parentInstance)
     weld.C0 = part0.CFrame:ToObjectSpace(part1.CFrame)
     weld.C1 = CFrame.identity
     weld.Parent = parentInstance
-    return weld
-end
-
-local function attachWeld(name, part0, part1, c0, c1, parent)
-    part1.CFrame = solvedPart1CFrame(part0, c0, c1)
-
-    local weld = Instance.new("Weld")
-    weld.Name = name
-    weld.Part0 = part0
-    weld.Part1 = part1
-    weld.C0 = c0
-    weld.C1 = c1
-    weld.Enabled = true
-    weld.Parent = parent
     return weld
 end
 
@@ -467,9 +406,21 @@ local function destroySpawnedAssemblies()
     for _, desc in ipairs(Workspace:GetDescendants()) do
         if desc:IsA("Folder") or desc:IsA("Model") then
             if string.find(desc.Name, B6_ASSEMBLY_CONFIG.FolderName, 1, true)
-                or string.find(desc.Name, JOJO_ASSEMBLY_CONFIG.FolderName, 1, true) then
+                or string.find(desc.Name, JOJO_BALL_CONFIG.FolderName, 1, true) then
                 pcall(function()
                     desc:Destroy()
+                end)
+            end
+        end
+    end
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        local char = plr.Character
+        if char then
+            local rigFolder = char:FindFirstChild(JOJO_BALL_CONFIG.FolderName)
+            if rigFolder then
+                pcall(function()
+                    rigFolder:Destroy()
                 end)
             end
         end
@@ -569,189 +520,77 @@ local function spawnB6TorsoAssembly(char, tagSuffix)
     }
 end
 
-local function spawnJojoTorsoAssembly(char, tagSuffix)
-    local folderName = JOJO_ASSEMBLY_CONFIG.FolderName .. (tagSuffix or "")
-    local existing = Workspace:FindFirstChild(folderName)
+local function spawnJojoBallsRig(char)
+    if not char then
+        return nil
+    end
+
+    local lowerTorso = char:FindFirstChild("LowerTorso") or char:WaitForChild("LowerTorso", 5)
+    if not lowerTorso or not lowerTorso:IsA("BasePart") then
+        return nil
+    end
+
+    local existing = char:FindFirstChild(JOJO_BALL_CONFIG.FolderName)
     if existing then
         existing:Destroy()
     end
 
     local container = Instance.new("Folder")
-    container.Name = folderName
-    container.Parent = Workspace
+    container.Name = JOJO_BALL_CONFIG.FolderName
+    container.Parent = char
 
-    local anchorPart = nil
-    local fallbackAnchor = false
-
-    if JOJO_ASSEMBLY_CONFIG.AttachToTargetTorso then
-        if JOJO_ASSEMBLY_CONFIG.TargetPart and JOJO_ASSEMBLY_CONFIG.TargetPart:IsA("BasePart") then
-            anchorPart = JOJO_ASSEMBLY_CONFIG.TargetPart
-        else
-            anchorPart = resolveTorsoForCharacter(char)
-        end
-    end
-
-    if not anchorPart then
-        local fallback = Instance.new("Part")
-        fallback.Name = "ReferenceAnchor"
-        fallback.Size = Vector3.new(1.4, 1.8, 0.85)
-        fallback.CFrame = JOJO_ASSEMBLY_CONFIG.SpawnCFrame
-        fallback.Transparency = 1
-        fallback.CanCollide = false
-        fallback.CanTouch = false
-        fallback.CanQuery = false
-        fallback.Anchored = true
-        fallback.Parent = container
-        anchorPart = fallback
-        fallbackAnchor = true
-    end
-
-    local partAnchored = fallbackAnchor and true or JOJO_ASSEMBLY_CONFIG.Anchored
-
-    local areolaDecals = {
-        { Name = "Areola Decal 1", Face = "Left", Texture = "rbxasset://RClothesContent/6667257628.png", Transparency = 0, Color3 = { r = 255, g = 167, b = 169 } },
-        { Name = "Areola Decal 2", Face = "Left", Texture = "rbxasset://RClothesContent/6667257628.png", Transparency = 0, Color3 = { r = 255, g = 167, b = 169 } },
-    }
-
-    local weldedEntries = {}
-
-    local leftBreast = buildMeshPart({
-        Name = "Left Breast",
-        MeshId = "rbxasset://RClothesContent/17645666081.mesh",
-        TextureID = "",
-        DoubleSided = false,
-        Size = { x = 0.6037, y = 0.947, z = 0.6248 },
-        Color = { r = 249, g = 249, b = 249 },
-        Material = "SmoothPlastic",
-        Transparency = 0,
-        Reflectance = 0,
-        Massless = true,
-        Attributes = { maxDeterminedRC = "true" },
-        Decals = areolaDecals,
-    }, container, partAnchored, JOJO_ASSEMBLY_CONFIG.ForceSpecialMesh)
-
-    local leftBreastBaseC0 = shiftCFrameY(
-        cfFromArray({ -0.1725, 0.5719, -0.3831, 0.3207, 0.2228, -0.9206, -0.1839, 0.9681, 0.1702, 0.9291, 0.1147, 0.3515 }),
-        JOJO_ASSEMBLY_CONFIG.YShift
-    )
-    local leftBreastC1 = cfFromArray({ 0.105, 0.27, 0, 1, 0, 0, -0, 1, -0.0003, -0, 0.0003, 1 })
-    table.insert(weldedEntries, {
-        weld = attachWeld("Left Breast Weld", anchorPart, leftBreast, leftBreastBaseC0, leftBreastC1, leftBreast),
-        baseC0 = leftBreastBaseC0,
-        disp = Vector3.zero,
-        vel = Vector3.zero
-    })
-
-    local rightBreast = buildMeshPart({
-        Name = "Right Breast",
-        MeshId = "rbxasset://RClothesContent/17645666081.mesh",
-        TextureID = "",
-        DoubleSided = false,
-        Size = { x = 0.6037, y = 0.947, z = 0.6248 },
-        Color = { r = 249, g = 249, b = 249 },
-        Material = "SmoothPlastic",
-        Transparency = 0,
-        Reflectance = 0,
-        Massless = true,
-        Attributes = { maxDeterminedRC = "true" },
-        Decals = areolaDecals,
-    }, container, partAnchored, JOJO_ASSEMBLY_CONFIG.ForceSpecialMesh)
-
-    local rightBreastBaseC0 = shiftCFrameY(
-        cfFromArray({ 0.1725, 0.5719, -0.3831, -0.3213, -0.2236, -0.9202, -0.184, 0.9679, -0.1709, 0.9289, 0.1144, -0.3522 }),
-        JOJO_ASSEMBLY_CONFIG.YShift
-    )
-    local rightBreastC1 = cfFromArray({ 0.105, 0.27, 0, 1, 0, 0, -0, 1, 0.0003, 0, -0.0003, 1 })
-    table.insert(weldedEntries, {
-        weld = attachWeld("Right Breast Weld", anchorPart, rightBreast, rightBreastBaseC0, rightBreastC1, rightBreast),
-        baseC0 = rightBreastBaseC0,
-        disp = Vector3.zero,
-        vel = Vector3.zero
-    })
-
-    local leftButt = buildMeshPart({
-        Name = "Left Butt",
-        MeshId = "rbxasset://RClothesContent/13181475662.mesh",
-        TextureID = "",
-        DoubleSided = false,
-        Size = { x = 0.7011, y = 0.8921, z = 0.8588 },
-        Color = { r = 249, g = 249, b = 249 },
-        Material = "SmoothPlastic",
-        Transparency = 0,
-        Reflectance = 0,
-        Massless = true,
-        Attributes = { maxDeterminedRC = "true" },
-    }, container, partAnchored, JOJO_ASSEMBLY_CONFIG.ForceSpecialMesh)
-
-    local leftButtBaseC0 = shiftCFrameY(
-        cfFromArray({ -0.3724, -0.8659, 0.2796, -1, 0.0002, 0.0002, 0.0002, 1, 0.0003, -0.0002, 0.0003, -1 }),
-        JOJO_ASSEMBLY_CONFIG.YShift
-    )
-    local leftButtC1 = cfFromArray({ 0.0445, 0, -0.1352, 1, 0, 0, 0, 1, 0, 0, 0, 1 })
-    table.insert(weldedEntries, {
-        weld = attachWeld("Left Butt Weld", anchorPart, leftButt, leftButtBaseC0, leftButtC1, leftButt),
-        baseC0 = leftButtBaseC0,
-        disp = Vector3.zero,
-        vel = Vector3.zero
-    })
-
-    local rightButt = buildMeshPart({
-        Name = "Right Butt",
-        MeshId = "rbxasset://RClothesContent/13181475663.mesh",
-        TextureID = "",
-        DoubleSided = false,
-        Size = { x = 0.7011, y = 0.8921, z = 0.8588 },
-        Color = { r = 249, g = 249, b = 249 },
-        Material = "SmoothPlastic",
-        Transparency = 0,
-        Reflectance = 0,
-        Massless = true,
-        Attributes = { maxDeterminedRC = "true" },
-    }, container, partAnchored, JOJO_ASSEMBLY_CONFIG.ForceSpecialMesh)
-
-    local rightButtBaseC0 = shiftCFrameY(
-        cfFromArray({ 0.3724, -0.8659, 0.2796, -1, 0.0002, 0.0002, 0.0002, 1, 0.0003, -0.0002, 0.0003, -1 }),
-        JOJO_ASSEMBLY_CONFIG.YShift
-    )
-    local rightButtC1 = cfFromArray({ 0.0445, 0, -0.1352, 1, 0, 0, 0, 1, 0, 0, 0, 1 })
-    table.insert(weldedEntries, {
-        weld = attachWeld("Right Butt Weld", anchorPart, rightButt, rightButtBaseC0, rightButtC1, rightButt),
-        baseC0 = rightButtBaseC0,
-        disp = Vector3.zero,
-        vel = Vector3.zero
-    })
-
-    local lowerTorsoTarget = resolveLowerTorsoTarget(char, anchorPart)
-    local whiteBall = createJojoBall(
+    local skinBall = createJojoBall(
         container,
-        "WhiteBall",
-        JOJO_ASSEMBLY_CONFIG.SkinBallSize,
-        Color3.fromRGB(255, 255, 255),
+        "SkinBall",
+        JOJO_BALL_CONFIG.SkinBallSize,
+        lowerTorso.Color,
         false
     )
-    local pinkBall = createJojoBall(
+
+    local salmonBall = createJojoBall(
         container,
-        "FlatPinkBall",
-        JOJO_ASSEMBLY_CONFIG.PinkBallSize,
-        JOJO_ASSEMBLY_CONFIG.PinkColor,
+        "SalmonBall",
+        JOJO_BALL_CONFIG.SalmonBallSize,
+        JOJO_BALL_CONFIG.SalmonColor,
         true
     )
 
-    if lowerTorsoTarget and lowerTorsoTarget.Parent then
-        whiteBall.CFrame = lowerTorsoTarget.CFrame * CFrame.new(JOJO_ASSEMBLY_CONFIG.SkinOffset)
-        pinkBall.CFrame = lowerTorsoTarget.CFrame * CFrame.new(JOJO_ASSEMBLY_CONFIG.PinkOffset)
+    local extraBalls = {}
+
+    for _, settings in ipairs(JOJO_BALL_CONFIG.ExtraBallSettings) do
+        local ballColor = settings.color or lowerTorso.Color
+
+        local ball1 = createJojoBall(
+            container,
+            settings.name1,
+            settings.size,
+            ballColor,
+            false
+        )
+
+        local ball2 = createJojoBall(
+            container,
+            settings.name2,
+            settings.size,
+            ballColor,
+            false
+        )
+
+        table.insert(extraBalls, {
+            ball1 = ball1,
+            ball2 = ball2,
+            offset = settings.initialOffset,
+            stickDistance = settings.stickDistance,
+        })
     end
 
     return {
         container = container,
         character = char,
-        anchorPart = anchorPart,
-        lowerTorsoPart = lowerTorsoTarget,
-        whiteBall = whiteBall,
-        pinkBall = pinkBall,
-        anchored = partAnchored,
-        entries = weldedEntries,
-        lastVel = anchorPart.AssemblyLinearVelocity
+        torso = lowerTorso,
+        skinBall = skinBall,
+        salmonBall = salmonBall,
+        extraBalls = extraBalls
     }
 end
 
@@ -1211,7 +1050,7 @@ local function activateTorsoAssembliesForCharacters()
     local jojoChar = (string.lower(USERNAME) == "jojo027212" and LocalPlayer.Character) or (jojoPlayer and jojoPlayer.Character)
 
     local b6States = {}
-    local jojoStates = {}
+    local jojoBallRigs = {}
 
     if b6Char then
         local st = spawnB6TorsoAssembly(b6Char, "_B6O6S")
@@ -1221,13 +1060,13 @@ local function activateTorsoAssembliesForCharacters()
     end
 
     if jojoChar then
-        local st = spawnJojoTorsoAssembly(jojoChar, "_Jojo")
-        if st then
-            table.insert(jojoStates, st)
+        local rig = spawnJojoBallsRig(jojoChar)
+        if rig then
+            table.insert(jojoBallRigs, rig)
         end
     end
 
-    if #b6States == 0 and #jojoStates == 0 then
+    if #b6States == 0 and #jojoBallRigs == 0 then
         return
     end
 
@@ -1281,44 +1120,28 @@ local function activateTorsoAssembliesForCharacters()
             end
         end
 
-        for _, jojoState in ipairs(jojoStates) do
-            if jojoState.whiteBall and jojoState.whiteBall.Parent and jojoState.pinkBall and jojoState.pinkBall.Parent then
-                local ballAnchor = jojoState.lowerTorsoPart
-                if not ballAnchor or not ballAnchor.Parent then
-                    ballAnchor = resolveLowerTorsoTarget(jojoState.character, jojoState.anchorPart)
-                    jojoState.lowerTorsoPart = ballAnchor
-                end
-                if ballAnchor and ballAnchor.Parent then
-                    jojoState.whiteBall.CFrame = ballAnchor.CFrame * CFrame.new(JOJO_ASSEMBLY_CONFIG.SkinOffset)
-                    jojoState.pinkBall.CFrame = ballAnchor.CFrame * CFrame.new(JOJO_ASSEMBLY_CONFIG.PinkOffset)
-                end
-            end
+        for _, rig in ipairs(jojoBallRigs) do
+            if rig.character and rig.character.Parent and rig.torso and rig.torso.Parent then
+                local torso = rig.torso
+                rig.skinBall.Color = torso.Color
+                rig.skinBall.CFrame = torso.CFrame * CFrame.new(JOJO_BALL_CONFIG.SkinOffset)
 
-            if JOJO_ASSEMBLY_CONFIG.JiggleEnabled and jojoState.anchorPart and jojoState.anchorPart.Parent and not jojoState.anchored then
-                local anchorPart = jojoState.anchorPart
-                local curVel = anchorPart.AssemblyLinearVelocity
-                local accel = (curVel - jojoState.lastVel) / clampedDt
-                jojoState.lastVel = curVel
+                rig.salmonBall.CFrame = torso.CFrame * CFrame.new(
+                    JOJO_BALL_CONFIG.SalmonOffset + Vector3.new(JOJO_BALL_CONFIG.StickDistance, 0, 0)
+                )
 
-                local localAccel = anchorPart.CFrame:VectorToObjectSpace(accel) * JOJO_ASSEMBLY_CONFIG.ImpulseStrength
-                local maxTiltRad = math.rad(JOJO_ASSEMBLY_CONFIG.MaxTiltDeg)
+                for _, data in ipairs(rig.extraBalls) do
+                    if data.ball1 and data.ball2 then
+                        if data.ball1.Color ~= JOJO_BALL_CONFIG.SalmonColor then
+                            data.ball1.Color = torso.Color
+                            data.ball2.Color = torso.Color
+                        end
 
-                for _, st in ipairs(jojoState.entries) do
-                    if st.weld and st.weld.Parent then
-                        local externalForce = Vector3.new(
-                            -localAccel.X,
-                            -localAccel.Y - 0.12,
-                            -localAccel.Z
+                        data.ball1.CFrame = torso.CFrame * CFrame.new(data.offset)
+
+                        data.ball2.CFrame = torso.CFrame * CFrame.new(
+                            data.offset + Vector3.new(data.stickDistance, 0, 0)
                         )
-
-                        local springAccel = (-JOJO_ASSEMBLY_CONFIG.Stiffness * st.disp) - (JOJO_ASSEMBLY_CONFIG.Damping * st.vel) + externalForce
-                        st.vel = st.vel + springAccel * clampedDt
-                        st.disp = clampVector(st.disp + st.vel * clampedDt, JOJO_ASSEMBLY_CONFIG.MaxOffset)
-
-                        local rx = math.clamp(st.disp.Y * 4.5, -maxTiltRad, maxTiltRad)
-                        local rz = math.clamp(-st.disp.X * 4.5, -maxTiltRad, maxTiltRad)
-
-                        st.weld.C0 = st.baseC0 * CFrame.new(st.disp) * CFrame.Angles(rx, 0, rz)
                     end
                 end
             end
@@ -1881,7 +1704,7 @@ local function applyThinBlackOutline(textObj, thickness)
     stroke.Parent = textObj
 end
 
--- Helper to render overhead chat bubble on a character's head (works even while spamming)
+-- Helper to render overhead chat bubble on a character's head
 local function showPlayerChatBubble(playerName, text)
     if not text or text == "" then return end
     pcall(function()
@@ -1941,26 +1764,33 @@ end
 local writeQueue = {}
 local isProcessingQueue = false
 
-local function enqueueBinMutation(mutateFn)
-    table.insert(writeQueue, mutateFn)
+local function enqueueBinMutation(mutateFn, onComplete)
+    table.insert(writeQueue, { fn = mutateFn, onComplete = onComplete })
     if isProcessingQueue then return end
     isProcessingQueue = true
 
     task.spawn(function()
         while #writeQueue > 0 do
-            local fn = table.remove(writeQueue, 1)
+            local entry = table.remove(writeQueue, 1)
+            local fn = entry.fn
+            local onCompleteFn = entry.onComplete
+            local wroteOk = false
             pcall(function()
                 fetchLatestBinRecord()
                 local nextPayload = fn(cachedBinRecord)
                 if type(nextPayload) == "table" then
                     cachedBinRecord.messages = nextPayload.messages or cachedBinRecord.messages
                     cachedBinRecord.adminCommand = nextPayload.adminCommand
-                    requestJsonBin("PUT", "", {
+                    local putOk = requestJsonBin("PUT", "", {
                         messages = cachedBinRecord.messages,
                         adminCommand = cachedBinRecord.adminCommand
                     })
+                    wroteOk = putOk == true
                 end
             end)
+            if wroteOk and onCompleteFn then
+                pcall(onCompleteFn)
+            end
         end
         isProcessingQueue = false
     end)
@@ -2017,7 +1847,7 @@ LocalPlayer.CharacterAdded:Connect(function(newChar)
     setPassThroughNoPush(false, false)
     StopButton.Visible = false
 
-    local keepAssemblies = actionState.assembliesActive and JOJO_ASSEMBLY_CONFIG.ReattachOnRespawn
+    local keepAssemblies = actionState.assembliesActive and JOJO_BALL_CONFIG.ReattachOnRespawn
     if not keepAssemblies then
         destroySpawnedAssemblies()
         WearButton.Visible = false
@@ -2834,10 +2664,8 @@ local function fetchMessages()
                         UnreadBadge.Visible = true
                     end
                     
-                    -- Show overhead chat bubble on sender (skip self since self bubble spawns immediately on send/spam)
-                    if string.lower(latestMsg.user) ~= string.lower(USERNAME) then
-                        showPlayerChatBubble(latestMsg.user, latestMsg.text)
-                    end
+                    -- Show overhead chat bubble only after message is confirmed in JSON
+                    showPlayerChatBubble(latestMsg.user, latestMsg.text)
                 end
             end
         else
@@ -2861,12 +2689,9 @@ ToggleButton.MouseButton1Click:Connect(function()
     end
 end)
 
--- Instant sending method with queue + spam support + self chat bubble
+-- Only show chat log entry and bubble after JSON write + fetch confirms it exists in JSON
 local function sendMessage(text)
     if text == "" then return end
-
-    addMessage(USERNAME, text, MY_THUMBNAIL, playerRegionCode)
-    showPlayerChatBubble(USERNAME, text)
 
     enqueueBinMutation(function(record)
         local messages = {}
@@ -2886,6 +2711,8 @@ local function sendMessage(text)
             messages = messages,
             adminCommand = record.adminCommand
         }
+    end, function()
+        pcall(fetchMessages)
     end)
 end
 
