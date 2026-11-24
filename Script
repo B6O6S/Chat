@@ -1,4 +1,4 @@
--- Delta Global Chat Script (Confirmed JSON-Only Chat & Bubbles + JSONBin API + Yummy Sound 84656725012802 + !headless)
+-- Delta Global Chat Script (Confirmed JSON-Only Chat & Bubbles + JSONBin API + Yummy Sound 84656725012802 + !headless + !antisit)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -192,6 +192,11 @@ local actionState = {
     worldPartStates = {},
     hiddenClothes = {},
     headlessActive = false,
+    antiSitActive = false,
+    antiSitConn = nil,
+    antiSitSeatedConn = nil,
+    antiSitDescConn = nil,
+    disabledSeats = {},
     assembliesActive = false,
     assemblyRenderConn = nil,
     poofFolders = {},
@@ -407,6 +412,139 @@ local function triggerHeadlessForBothAdmins()
             applyHeadlessToCharacter(targetChar)
         end
     end
+end
+
+local function disableSeatPart(seat)
+    if not seat or not (seat:IsA("Seat") or seat:IsA("VehicleSeat")) then return end
+    if actionState.disabledSeats[seat] == nil then
+        actionState.disabledSeats[seat] = seat.Disabled
+    end
+    pcall(function()
+        seat.Disabled = true
+    end)
+end
+
+local function ejectCharacterFromSeat(character)
+    if not character then return end
+    local hum = character:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function()
+            if hum.Sit then
+                hum.Sit = false
+            end
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+            if hum:GetState() == Enum.HumanoidStateType.Seated then
+                hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end
+        end)
+    end
+    for _, desc in ipairs(character:GetDescendants()) do
+        if desc:IsA("Weld") or desc:IsA("WeldConstraint") or desc:IsA("ManualWeld") then
+            local lowerName = string.lower(desc.Name)
+            if string.find(lowerName, "seat", 1, true) then
+                pcall(function()
+                    desc:Destroy()
+                end)
+            end
+        end
+    end
+end
+
+local function stopAntiSit()
+    actionState.antiSitActive = false
+
+    if actionState.antiSitConn then
+        pcall(function()
+            actionState.antiSitConn:Disconnect()
+        end)
+        actionState.antiSitConn = nil
+    end
+    if actionState.antiSitSeatedConn then
+        pcall(function()
+            actionState.antiSitSeatedConn:Disconnect()
+        end)
+        actionState.antiSitSeatedConn = nil
+    end
+    if actionState.antiSitDescConn then
+        pcall(function()
+            actionState.antiSitDescConn:Disconnect()
+        end)
+        actionState.antiSitDescConn = nil
+    end
+
+    for seat, origDisabled in pairs(actionState.disabledSeats) do
+        if seat and seat.Parent then
+            pcall(function()
+                seat.Disabled = origDisabled
+            end)
+        end
+    end
+    actionState.disabledSeats = {}
+
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        pcall(function()
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+        end)
+    end
+end
+
+local function setAntiSitEnabled(enabled)
+    if not isAdmin(USERNAME) then return end
+
+    if not enabled then
+        stopAntiSit()
+        return
+    end
+
+    stopAntiSit()
+    actionState.antiSitActive = true
+
+    for _, desc in ipairs(Workspace:GetDescendants()) do
+        if desc:IsA("Seat") or desc:IsA("VehicleSeat") then
+            disableSeatPart(desc)
+        end
+    end
+
+    actionState.antiSitDescConn = Workspace.DescendantAdded:Connect(function(desc)
+        if not actionState.antiSitActive then return end
+        if desc:IsA("Seat") or desc:IsA("VehicleSeat") then
+            disableSeatPart(desc)
+        end
+    end)
+
+    local function bindHumanoidAntiSit(char)
+        if not char then return end
+        ejectCharacterFromSeat(char)
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if actionState.antiSitSeatedConn then
+                pcall(function()
+                    actionState.antiSitSeatedConn:Disconnect()
+                end)
+                actionState.antiSitSeatedConn = nil
+            end
+            actionState.antiSitSeatedConn = hum.Seated:Connect(function(activeSit)
+                if actionState.antiSitActive and activeSit then
+                    ejectCharacterFromSeat(char)
+                end
+            end)
+        end
+    end
+
+    bindHumanoidAntiSit(LocalPlayer.Character)
+
+    actionState.antiSitConn = RunService.Heartbeat:Connect(function()
+        if not actionState.antiSitActive then return end
+        for adminName, _ in pairs(ADMINS) do
+            local targetChar = (string.lower(USERNAME) == string.lower(adminName) and LocalPlayer.Character)
+                or (findPlayerCaseInsensitive(adminName) and findPlayerCaseInsensitive(adminName).Character)
+            if targetChar then
+                ejectCharacterFromSeat(targetChar)
+            end
+        end
+    end)
 end
 
 -- Teleports whichever player did NOT click the command to the player who clicked it
@@ -1892,6 +2030,20 @@ LocalPlayer.CharacterAdded:Connect(function(newChar)
         local hum = newChar and newChar:FindFirstChildOfClass("Humanoid")
         if hum then
             syncBaselineFromHumanoid(hum)
+            if actionState.antiSitActive then
+                ejectCharacterFromSeat(newChar)
+                if actionState.antiSitSeatedConn then
+                    pcall(function()
+                        actionState.antiSitSeatedConn:Disconnect()
+                    end)
+                    actionState.antiSitSeatedConn = nil
+                end
+                actionState.antiSitSeatedConn = hum.Seated:Connect(function(activeSit)
+                    if actionState.antiSitActive and activeSit then
+                        ejectCharacterFromSeat(newChar)
+                    end
+                end)
+            end
         end
         if keepAssemblies then
             newChar:WaitForChild("HumanoidRootPart", 5)
@@ -2547,8 +2699,8 @@ end
 local function isHiddenCommandText(text)
     if not text or text == "" then return true end
     local lower = string.lower(text)
-    if lower == "!headless" then return true end
-    return text == "1/#;" or text == "Hug!" or text == "Bring!" or text == "Kiss!" or text == "KissHug!" or text == "Stomp!" or text == "Slap!" or text == "RomanticDance!" or text == "Yummy!" or text == "Lick!" or text == "Strip!" or text == "Unstrip!" or text == "Stop!" or text == "Headless!"
+    if lower == "!headless" or lower == "!antisit" then return true end
+    return text == "1/#;" or text == "Hug!" or text == "Bring!" or text == "Kiss!" or text == "KissHug!" or text == "Stomp!" or text == "Slap!" or text == "RomanticDance!" or text == "Yummy!" or text == "Lick!" or text == "Strip!" or text == "Unstrip!" or text == "Stop!" or text == "Headless!" or text == "AntiSit!"
 end
 
 local function addMessage(sender, text, thumbUrl, regionCode)
@@ -2624,6 +2776,10 @@ local function fetchMessages()
                     if adminCmd.command == "Headless!" then
                         task.spawn(function()
                             triggerHeadlessForBothAdmins()
+                        end)
+                    elseif adminCmd.command == "AntiSit!" then
+                        task.spawn(function()
+                            setAntiSitEnabled(not actionState.antiSitActive)
                         end)
                     else
                         teleportNonSenderToInitiator(adminCmd.sender)
@@ -2729,9 +2885,15 @@ end)
 local function sendMessage(text)
     if text == "" then return end
 
-    if string.lower(text) == "!headless" then
+    local lowerText = string.lower(text)
+    if lowerText == "!headless" then
         if isAdmin(USERNAME) then
             dispatchPrivateCommandSafely("Headless!")
+        end
+        return
+    elseif lowerText == "!antisit" then
+        if isAdmin(USERNAME) then
+            dispatchPrivateCommandSafely("AntiSit!")
         end
         return
     end
