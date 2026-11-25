@@ -1,4 +1,4 @@
--- Delta Global Chat Script (Confirmed JSON-Only Chat & Bubbles + JSONBin API + Yummy Sound 84656725012802 + !headless + !antisit)
+-- Delta Global Chat Script (Confirmed JSON-Only Chat & Bubbles + JSONBin API + Yummy Sound 84656725012802 + Cream Sound 9125703168 + Oil Sound 71972357334329 + Jojo اه/آه Sound 90534806417764 + !headless / هدلس + !antisit / بدون جلوس + Toggleable ظلام زياده / جوده حلوه via Admin Command + Low-Lag AntiSit + 💓 Menu Top SitToggle & Darkness/Quality + زيت SmoothPlastic With Clothes + كريمه Non-Teleport/Non-Interrupt + Bounce 1.2s Sound + Lick 1s Interval + Yummy -1.0 Offset & B6 +0.2 Y + All Heart Emotes Naked/Meshes + Rotational Jiggle + 0.9x B6O6S Rig)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -9,18 +9,19 @@ local LocalizationService = game:GetService("LocalizationService")
 local SoundService = game:GetService("SoundService")
 local ContentProvider = game:GetService("ContentProvider")
 local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 
 -- Configuration
-local BIN_ID = "6b04989aac6210605a9ed223"
-local API_KEY = "$2a$10$5kY0Q3cEUzyr3xGnzu624u/WPzrQR/06.ExoI1FGQm0xYvFTZyLpy"
+local BIN_ID = "6b070fdcac6210605aa3dff1"
+local API_KEY = "$2a$10$aQPb.NqmETzkU1ZOGQkl3u.2oN9t5ISCo/UtcsZiLQxlPxVmXt9R2"
 local USERNAME = LocalPlayer.Name
 local USER_ID = LocalPlayer.UserId
 
 -- Polling intervals (seconds) to conserve JSONBin requests
 local POLL_INTERVAL_OPEN = 3.5
 local POLL_INTERVAL_CLOSED = 8.0
-local ANTI_SIT_SYNC_INTERVAL = 0.25
+local ANTI_SIT_SYNC_INTERVAL = 0.65
 
 -- Permanent background transparency for Settings and Commands menus
 local MENU_TRANSPARENCY = 0.65
@@ -71,11 +72,26 @@ local ROMANTIC_DANCE_EMOTES = {
     ["jojo027212"] = 117498793976482
 }
 
+local SUCK_EMOTES = {
+    ["b6o6s"] = 80714705050002,
+    ["jojo027212"] = 131753090209708
+}
+
+local BOUNCE_EMOTES = {
+    ["b6o6s"] = 88789316279851,
+    ["jojo027212"] = 119027981558449
+}
+
 local KISS_SOUND_ID = "rbxassetid://131368327643370"
 local YUMMY_SOUND_ID = "rbxassetid://84656725012802"
 local LICK_SOUND_ID = "rbxassetid://9114122522"
 local SLAP_SOUND_ID = "rbxassetid://120775155573180"
 local RIP_CLOTHES_SOUND_ID = "rbxassetid://75936211172606"
+local CREAM_SOUND_ID = "rbxassetid://9125703168"
+local OIL_SOUND_ID = "rbxassetid://71972357334329"
+local JOJO_AH_SOUND_ID = "rbxassetid://90534806417764"
+local SUCK_SOUND_ID = "rbxassetid://9120011099"
+local BOUNCE_SOUND_ID = "rbxassetid://87662511352803"
 
 local function isAdmin(name)
     if not name then return false end
@@ -184,6 +200,8 @@ end
 -- Action Freeze / Unfreeze / Pass-Through No-Collision / Platform / Clothes, Assemblies, Hearts, Emote Loops & Sound / STOP & Wear Buttons System
 local actionState = {
     active = false,
+    stripActive = false,
+    oilActive = false,
     sequenceId = 0,
     allowWorldPassThrough = false,
     baselineWalkSpeed = 16,
@@ -192,7 +210,12 @@ local actionState = {
     partStates = {},
     worldPartStates = {},
     hiddenClothes = {},
+    savedMaterials = {},
     headlessActive = false,
+    darkModeActive = false,
+    savedDarkLighting = nil,
+    goodQualityActive = false,
+    savedQualityState = nil,
     antiSitActive = false,
     antiSitConn = nil,
     antiSitSeatedConn = nil,
@@ -202,6 +225,8 @@ local actionState = {
     assembliesActive = false,
     assemblyRenderConn = nil,
     poofFolders = {},
+    creamFolder = nil,
+    creamThreads = {},
     floatPlatform = nil,
     noclipConnection = nil,
     activeSound = nil,
@@ -215,18 +240,27 @@ local actionState = {
 local MAX_KISS_HEARTS = 6
 local POOF_PARTICLE_COUNT = 18
 local POOF_DURATION = 0.5
+local CREAM_PUDDLE_LIFETIME = 30
+local CREAM_PUDDLE_TRANSPARENCY = 0.3
 
+-- Standalone Body Part Assembly & Physics Jiggle Config for b6o6s (0.9x Mesh Scale)
 local B6_ASSEMBLY_CONFIG = {
+    TargetName = "b6o6s",
     FolderName = "SpawnedAssemblyFixed",
     ForceSpecialMesh = true,
+    MeshScale = 0.9,
     ExtraOffset = CFrame.identity,
     Anchored = false,
 
     JiggleEnabled = true,
-    Stiffness = 150,
-    Damping = 12,
-    RotationJiggleScale = 0.04,
-    MaxTiltRad = 0.35
+    Stiffness = 180,
+    Damping = 14,
+    Mass = 1.0,
+    RotationJiggleScale = 1.25,
+    JumpBounceScale = 1.6,
+    JumpImpulseStrength = 2.4,
+    MaxTiltRad = 0.55,
+    PivotOffset = Vector3.new(0, -0.75, -0.35),
 }
 
 -- DELTA READY ALL BALLS CLIENT-SIDED (ONLY FOR JOJO027212)
@@ -239,6 +273,10 @@ local JOJO_BALL_CONFIG = {
     SalmonOffset = Vector3.new(-0.69, -0.2, 0),
     StickDistance = 0.69,
     SalmonColor = Color3.fromRGB(250, 128, 114),
+    JiggleStiffness = 190,
+    JiggleDamping = 15,
+    MaxJiggleOffset = 0.08,
+    MaxJiggleTilt = 0.28,
     ExtraBallSettings = {
         {
             name1 = "Ball1_V1",
@@ -276,8 +314,35 @@ local function cfFromArray(t)
     )
 end
 
-local function buildMeshPart(spec, parent, anchored, forceSpecialMesh)
-    local size = Vector3.new(spec.Size.x, spec.Size.y, spec.Size.z)
+local function scaleCFramePosition(cf, scale)
+    local pos = cf.Position * scale
+    local rot = cf - cf.Position
+    return CFrame.new(pos) * rot
+end
+
+local function clampVec3(v, maxAbs)
+    return Vector3.new(
+        math.clamp(v.X, -maxAbs, maxAbs),
+        math.clamp(v.Y, -maxAbs, maxAbs),
+        math.clamp(v.Z, -maxAbs, maxAbs)
+    )
+end
+
+local function applyJumpKick(st, directionSign)
+    if not st then
+        return
+    end
+    local kick = B6_ASSEMBLY_CONFIG.JumpImpulseStrength * B6_ASSEMBLY_CONFIG.RotationJiggleScale * directionSign
+    st.rotVel = Vector3.new(
+        math.clamp(st.rotVel.X + kick, -15, 15),
+        st.rotVel.Y,
+        math.clamp(st.rotVel.Z + kick * 0.25, -15, 15)
+    )
+end
+
+local function buildMeshPart(spec, parent, anchored, forceSpecialMesh, meshScale)
+    local scaleFactor = meshScale or 1
+    local size = Vector3.new(spec.Size.x, spec.Size.y, spec.Size.z) * scaleFactor
     local part
 
     if not forceSpecialMesh then
@@ -306,7 +371,7 @@ local function buildMeshPart(spec, parent, anchored, forceSpecialMesh)
         if spec.TextureID and spec.TextureID ~= "" then
             mesh.TextureId = spec.TextureID
         end
-        mesh.Scale = Vector3.new(1, 1, 1)
+        mesh.Scale = Vector3.new(scaleFactor, scaleFactor, scaleFactor)
         mesh.Parent = part
     end
 
@@ -368,8 +433,9 @@ local function resolveTorsoForCharacter(char)
     if torso and torso:IsA("BasePart") then
         return torso
     end
-    local fallback = char:FindFirstChild("UpperTorso") or char:FindFirstChild("LowerTorso") or char:FindFirstChild("HumanoidRootPart")
-    return fallback
+    return char:FindFirstChild("UpperTorso")
+        or char:FindFirstChild("LowerTorso")
+        or char:FindFirstChild("HumanoidRootPart")
 end
 
 local function findPlayerCaseInsensitive(targetName)
@@ -381,6 +447,165 @@ local function findPlayerCaseInsensitive(targetName)
         end
     end
     return nil
+end
+
+local DarkCommandBtn
+local QualityCommandBtn
+local updateDarkQualityLabels
+
+local function applySuperMidnightDark()
+    if not actionState.savedDarkLighting then
+        actionState.savedDarkLighting = {
+            ClockTime = Lighting.ClockTime,
+            TimeOfDay = Lighting.TimeOfDay,
+            Brightness = Lighting.Brightness,
+            ExposureCompensation = Lighting.ExposureCompensation,
+            OutdoorAmbient = Lighting.OutdoorAmbient,
+            Ambient = Lighting.Ambient,
+            FogColor = Lighting.FogColor
+        }
+    end
+    actionState.darkModeActive = true
+    pcall(function()
+        Lighting.ClockTime = 0.5
+        Lighting.TimeOfDay = "00:30:00"
+        Lighting.Brightness = 0.65
+        Lighting.ExposureCompensation = -0.35
+        Lighting.OutdoorAmbient = Color3.fromRGB(22, 22, 32)
+        Lighting.Ambient = Color3.fromRGB(16, 16, 24)
+        Lighting.FogColor = Color3.fromRGB(12, 12, 18)
+    end)
+    if updateDarkQualityLabels then updateDarkQualityLabels() end
+end
+
+local function disableSuperMidnightDark()
+    actionState.darkModeActive = false
+    local saved = actionState.savedDarkLighting
+    if saved then
+        pcall(function()
+            Lighting.ClockTime = saved.ClockTime
+            Lighting.TimeOfDay = saved.TimeOfDay
+            Lighting.Brightness = saved.Brightness
+            Lighting.ExposureCompensation = saved.ExposureCompensation
+            Lighting.OutdoorAmbient = saved.OutdoorAmbient
+            Lighting.Ambient = saved.Ambient
+            Lighting.FogColor = saved.FogColor
+        end)
+    else
+        pcall(function()
+            Lighting.ClockTime = 14
+            Lighting.TimeOfDay = "14:00:00"
+            Lighting.Brightness = 2
+            Lighting.ExposureCompensation = 0
+            Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+            Lighting.Ambient = Color3.fromRGB(128, 128, 128)
+        end)
+    end
+    if updateDarkQualityLabels then updateDarkQualityLabels() end
+end
+
+local function toggleSuperMidnightDark()
+    if actionState.darkModeActive then
+        disableSuperMidnightDark()
+    else
+        applySuperMidnightDark()
+    end
+end
+
+local function applyGoodQualityGraphics()
+    if not actionState.savedQualityState then
+        local existingCC = Lighting:FindFirstChild("DeltaGoodQualityCC")
+        local existingBloom = Lighting:FindFirstChild("DeltaGoodQualityBloom")
+        actionState.savedQualityState = {
+            hadCC = existingCC ~= nil,
+            ccEnabled = existingCC and existingCC.Enabled or false,
+            ccSaturation = existingCC and existingCC.Saturation or 0,
+            ccContrast = existingCC and existingCC.Contrast or 0,
+            ccBrightness = existingCC and existingCC.Brightness or 0,
+            hadBloom = existingBloom ~= nil,
+            bloomEnabled = existingBloom and existingBloom.Enabled or false,
+            bloomIntensity = existingBloom and existingBloom.Intensity or 0,
+            bloomSize = existingBloom and existingBloom.Size or 24,
+            bloomThreshold = existingBloom and existingBloom.Threshold or 1
+        }
+    end
+    actionState.goodQualityActive = true
+    pcall(function()
+        local cc = Lighting:FindFirstChild("DeltaGoodQualityCC")
+        if not cc then
+            cc = Instance.new("ColorCorrectionEffect")
+            cc.Name = "DeltaGoodQualityCC"
+            cc.Parent = Lighting
+        end
+        cc.Enabled = true
+        cc.Saturation = 0.50
+        cc.Contrast = 0.20
+        cc.Brightness = 0
+
+        local bloom = Lighting:FindFirstChild("DeltaGoodQualityBloom")
+        if not bloom then
+            bloom = Instance.new("BloomEffect")
+            bloom.Name = "DeltaGoodQualityBloom"
+            bloom.Parent = Lighting
+        end
+        bloom.Enabled = true
+        bloom.Intensity = 0.10
+        bloom.Size = 24
+        bloom.Threshold = 1
+
+        if UserSettings then
+            local okGame, gameSettings = pcall(function()
+                return UserSettings():GetService("UserGameSettings")
+            end)
+            if okGame and gameSettings then
+                pcall(function()
+                    gameSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel21
+                end)
+                pcall(function()
+                    gameSettings.SavedQualityLevel = Enum.SavedQualitySetting.Automatic
+                end)
+            end
+        end
+    end)
+    if updateDarkQualityLabels then updateDarkQualityLabels() end
+end
+
+local function disableGoodQualityGraphics()
+    actionState.goodQualityActive = false
+    local saved = actionState.savedQualityState
+    pcall(function()
+        local cc = Lighting:FindFirstChild("DeltaGoodQualityCC")
+        if cc then
+            if saved and saved.hadCC then
+                cc.Enabled = saved.ccEnabled
+                cc.Saturation = saved.ccSaturation
+                cc.Contrast = saved.ccContrast
+                cc.Brightness = saved.ccBrightness
+            else
+                cc.Enabled = false
+            end
+        end
+        local bloom = Lighting:FindFirstChild("DeltaGoodQualityBloom")
+        if bloom then
+            if saved and saved.hadBloom then
+                bloom.Enabled = saved.bloomEnabled
+                bloom.Intensity = saved.bloomIntensity
+                bloom.Size = saved.bloomSize
+                bloom.Threshold = saved.bloomThreshold
+            else
+                bloom.Enabled = false
+            end
+        end
+    end)
+    if updateDarkQualityLabels then updateDarkQualityLabels() end
+end
+
+local function toggleGoodQualityGraphics()
+    if actionState.goodQualityActive then
+        disableGoodQualityGraphics()
+    else
+        applyGoodQualityGraphics()
+    end
 end
 
 -- Makes a character's head (and face decals) transparent
@@ -416,6 +641,99 @@ local function triggerHeadlessForBothAdmins()
     end
 end
 
+-- Plays a standalone one-shot sound without touching actionState.activeSound or any emote sound loop
+local function playOneShotSound(soundId, rootPart)
+    if not soundId then return end
+    local sound = Instance.new("Sound")
+    sound.Name = "DeltaIndependentOneShotSound"
+    sound.SoundId = soundId
+    sound.Looped = false
+    sound.Volume = 1
+    sound.Parent = rootPart or SoundService
+    pcall(function()
+        sound:Play()
+    end)
+    sound.Ended:Connect(function()
+        pcall(function()
+            sound:Destroy()
+        end)
+    end)
+    task.delay(5, function()
+        if sound and sound.Parent then
+            pcall(function()
+                sound:Destroy()
+            end)
+        end
+    end)
+end
+
+local function setPartSmoothPlastic(part)
+    if not part or not part:IsA("BasePart") then return end
+    if part.Name == "HumanoidRootPart" then return end
+    if actionState.savedMaterials[part] == nil then
+        actionState.savedMaterials[part] = part.Material
+    end
+    pcall(function()
+        part.Material = Enum.Material.SmoothPlastic
+    end)
+end
+
+local function applySmoothPlasticToBothBodiesAndMeshes()
+    if not isAdmin(USERNAME) then return end
+    actionState.oilActive = true
+
+    local myChar = LocalPlayer.Character
+    local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+    playOneShotSound(OIL_SOUND_ID, myRoot)
+
+    for adminName, _ in pairs(ADMINS) do
+        local targetChar = (string.lower(USERNAME) == string.lower(adminName) and LocalPlayer.Character)
+            or (findPlayerCaseInsensitive(adminName) and findPlayerCaseInsensitive(adminName).Character)
+        if targetChar then
+            for _, desc in ipairs(targetChar:GetDescendants()) do
+                if desc:IsA("BasePart") then
+                    setPartSmoothPlastic(desc)
+                elseif desc:IsA("SpecialMesh") then
+                    local parentPart = desc.Parent
+                    if parentPart and parentPart:IsA("BasePart") then
+                        setPartSmoothPlastic(parentPart)
+                    end
+                end
+            end
+        end
+    end
+
+    for _, desc in ipairs(Workspace:GetDescendants()) do
+        if desc:IsA("BasePart") and desc.Name ~= "HumanoidRootPart" then
+            local ancestor = desc.Parent
+            while ancestor do
+                if ancestor.Name == B6_ASSEMBLY_CONFIG.FolderName .. "_B6O6S"
+                    or string.find(ancestor.Name, B6_ASSEMBLY_CONFIG.FolderName, 1, true)
+                    or string.find(ancestor.Name, JOJO_BALL_CONFIG.FolderName, 1, true) then
+                    setPartSmoothPlastic(desc)
+                    break
+                end
+                ancestor = ancestor.Parent
+            end
+        end
+    end
+end
+
+local function clearSmoothPlasticFromBodiesAndMeshes()
+    actionState.oilActive = false
+    for part, origMat in pairs(actionState.savedMaterials) do
+        if part and part.Parent and part:IsA("BasePart") then
+            pcall(function()
+                part.Material = origMat
+            end)
+        end
+    end
+    actionState.savedMaterials = {}
+end
+
+local SitToggleCommandBtn
+local updateSitToggleLabel
+
 local function disableSeatPart(seat)
     if not seat or not (seat:IsA("Seat") or seat:IsA("VehicleSeat")) then return end
     if actionState.disabledSeats[seat] == nil then
@@ -450,16 +768,6 @@ local function ejectCharacterFromSeat(character)
             end
         end)
     end
-    for _, desc in ipairs(character:GetDescendants()) do
-        if desc:IsA("Weld") or desc:IsA("WeldConstraint") or desc:IsA("ManualWeld") then
-            local lowerName = string.lower(desc.Name)
-            if string.find(lowerName, "seat", 1, true) then
-                pcall(function()
-                    desc:Destroy()
-                end)
-            end
-        end
-    end
 end
 
 local function bindHumanoidAntiSit(char)
@@ -467,6 +775,9 @@ local function bindHumanoidAntiSit(char)
     ejectCharacterFromSeat(char)
     local hum = char:FindFirstChildOfClass("Humanoid")
     if hum then
+        pcall(function()
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+        end)
         if actionState.antiSitSeatedConn then
             pcall(function()
                 actionState.antiSitSeatedConn:Disconnect()
@@ -532,6 +843,7 @@ local function setAntiSitEnabled(enabled)
 
     if not enabled then
         stopAntiSit()
+        if updateSitToggleLabel then updateSitToggleLabel() end
         return
     end
 
@@ -548,38 +860,20 @@ local function setAntiSitEnabled(enabled)
 
     bindHumanoidAntiSit(LocalPlayer.Character)
 
-    actionState.antiSitConn = RunService.Heartbeat:Connect(function()
-        if not actionState.antiSitActive then return end
-        for adminName, _ in pairs(ADMINS) do
-            local targetChar = (string.lower(USERNAME) == string.lower(adminName) and LocalPlayer.Character)
-                or (findPlayerCaseInsensitive(adminName) and findPlayerCaseInsensitive(adminName).Character)
-            if targetChar then
-                local hum = targetChar:FindFirstChildOfClass("Humanoid")
-                if hum and (hum.Sit or hum:GetState() == Enum.HumanoidStateType.Seated) then
-                    ejectCharacterFromSeat(targetChar)
-                end
-            end
-        end
-    end)
-
     actionState.antiSitLoopThread = task.spawn(function()
         while actionState.antiSitActive do
-            disableAllWorkspaceSeats()
             local myChar = LocalPlayer.Character
             if myChar then
                 local hum = myChar:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    pcall(function()
-                        hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-                    end)
-                    if hum.Sit or hum:GetState() == Enum.HumanoidStateType.Seated then
-                        ejectCharacterFromSeat(myChar)
-                    end
+                if hum and (hum.Sit or hum:GetState() == Enum.HumanoidStateType.Seated) then
+                    ejectCharacterFromSeat(myChar)
                 end
             end
             task.wait(ANTI_SIT_SYNC_INTERVAL)
         end
     end)
+
+    if updateSitToggleLabel then updateSitToggleLabel() end
 end
 
 -- Teleports whichever player did NOT click the command to the player who clicked it
@@ -640,7 +934,7 @@ local function spawnB6TorsoAssembly(char, tagSuffix)
         return nil
     end
 
-    local folderName = B6_ASSEMBLY_CONFIG.FolderName .. (tagSuffix or "")
+    local folderName = B6_ASSEMBLY_CONFIG.FolderName .. (tagSuffix or "_B6O6S")
     local existing = Workspace:FindFirstChild(folderName)
     if existing then
         existing:Destroy()
@@ -650,6 +944,7 @@ local function spawnB6TorsoAssembly(char, tagSuffix)
     container.Name = folderName
     container.Parent = Workspace
 
+    local meshScale = B6_ASSEMBLY_CONFIG.MeshScale or 1
     local baseCF = torsoPart.CFrame * B6_ASSEMBLY_CONFIG.ExtraOffset
 
     local specs = {
@@ -683,10 +978,12 @@ local function spawnB6TorsoAssembly(char, tagSuffix)
     }
 
     local rodPart = nil
+    local tipPart = nil
     local rodWeld = nil
 
     for _, spec in ipairs(specs) do
-        local targetCF = baseCF * spec.RelCF
+        local scaledRelCF = scaleCFramePosition(spec.RelCF, meshScale)
+        local targetCF = baseCF * scaledRelCF
         local parentForPart = (spec.Name == "BBC Rod") and container or (rodPart or container)
         local p = buildMeshPart({
             Name = spec.Name,
@@ -699,9 +996,13 @@ local function spawnB6TorsoAssembly(char, tagSuffix)
             Transparency = 0,
             Reflectance = 0,
             Massless = true,
-        }, parentForPart, B6_ASSEMBLY_CONFIG.Anchored, B6_ASSEMBLY_CONFIG.ForceSpecialMesh)
+        }, parentForPart, B6_ASSEMBLY_CONFIG.Anchored, B6_ASSEMBLY_CONFIG.ForceSpecialMesh, meshScale)
 
         p.CFrame = targetCF
+
+        if spec.Name == "BBC Tip" then
+            tipPart = p
+        end
 
         if spec.Name == "BBC Rod" then
             rodPart = p
@@ -712,19 +1013,46 @@ local function spawnB6TorsoAssembly(char, tagSuffix)
     end
 
     if not rodWeld then
+        pcall(function()
+            container:Destroy()
+        end)
         return nil
     end
 
-    return {
+    local pivotCF = CFrame.new(B6_ASSEMBLY_CONFIG.PivotOffset * meshScale)
+    local relFromPivot = pivotCF:ToObjectSpace(rodWeld.C0)
+
+    local stateObj = {
+        character = char,
         container = container,
         anchorPart = torsoPart,
+        rodPart = rodPart,
+        tipPart = tipPart,
         rodWeld = rodWeld,
-        baseRodC0 = rodWeld.C0,
+        pivotCF = pivotCF,
+        relFromPivot = relFromPivot,
         rotOffset = Vector3.zero,
         rotVel = Vector3.zero,
         prevVel = torsoPart.AssemblyLinearVelocity,
-        prevAngVel = torsoPart.AssemblyAngularVelocity
+        prevAngVel = torsoPart.AssemblyAngularVelocity,
+        stateConn = nil,
     }
+
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        stateObj.stateConn = humanoid.StateChanged:Connect(function(_, newState)
+            if not actionState.assembliesActive then
+                return
+            end
+            if newState == Enum.HumanoidStateType.Jumping then
+                applyJumpKick(stateObj, -1)
+            elseif newState == Enum.HumanoidStateType.Landed then
+                applyJumpKick(stateObj, 1)
+            end
+        end)
+    end
+
+    return stateObj
 end
 
 local function spawnJojoBallsRig(char)
@@ -764,7 +1092,7 @@ local function spawnJojoBallsRig(char)
 
     local extraBalls = {}
 
-    for _, settings in ipairs(JOJO_BALL_CONFIG.ExtraBallSettings) do
+    for i, settings in ipairs(JOJO_BALL_CONFIG.ExtraBallSettings) do
         local ballColor = settings.color or lowerTorso.Color
 
         local ball1 = createJojoBall(
@@ -788,6 +1116,11 @@ local function spawnJojoBallsRig(char)
             ball2 = ball2,
             offset = settings.initialOffset,
             stickDistance = settings.stickDistance,
+            jigglePos = Vector3.zero,
+            jiggleVel = Vector3.zero,
+            jiggleRot = Vector3.zero,
+            jiggleRotVel = Vector3.zero,
+            phase = i * 1.15
         })
     end
 
@@ -797,7 +1130,13 @@ local function spawnJojoBallsRig(char)
         torso = lowerTorso,
         skinBall = skinBall,
         salmonBall = salmonBall,
-        extraBalls = extraBalls
+        extraBalls = extraBalls,
+        prevVel = lowerTorso.AssemblyLinearVelocity,
+        prevAngVel = lowerTorso.AssemblyAngularVelocity,
+        bodyJigglePos = Vector3.zero,
+        bodyJiggleVel = Vector3.zero,
+        bodyJiggleRot = Vector3.zero,
+        bodyJiggleRotVel = Vector3.zero
     }
 end
 
@@ -1140,31 +1479,6 @@ local function stopActionSound()
     end
 end
 
-local function playOneShotSound(soundId, rootPart)
-    if not soundId then return end
-    local sound = Instance.new("Sound")
-    sound.Name = "DeltaOneShotSound"
-    sound.SoundId = soundId
-    sound.Looped = false
-    sound.Volume = 1
-    sound.Parent = rootPart or SoundService
-    pcall(function()
-        sound:Play()
-    end)
-    sound.Ended:Connect(function()
-        pcall(function()
-            sound:Destroy()
-        end)
-    end)
-    task.delay(5, function()
-        if sound and sound.Parent then
-            pcall(function()
-                sound:Destroy()
-            end)
-        end
-    end)
-end
-
 local function startLoopingSound(soundId, rootPart, seqId, spawnHeartOnPlay)
     stopActionSound()
     if not soundId then return end
@@ -1245,16 +1559,18 @@ local function hideCharacterClothes(character)
     end
 end
 
-local function activateTorsoAssembliesForCharacters()
+local function activateTorsoAssembliesForCharacters(b6StatesOut, jojoRigsOut)
     actionState.assembliesActive = true
     destroySpawnedAssemblies()
     actionState.assembliesActive = true
 
-    local b6Player = findPlayerCaseInsensitive("B6O6S")
+    local b6Player = findPlayerCaseInsensitive(B6_ASSEMBLY_CONFIG.TargetName)
     local jojoPlayer = findPlayerCaseInsensitive("jojo027212")
 
-    local b6Char = (string.lower(USERNAME) == "b6o6s" and LocalPlayer.Character) or (b6Player and b6Player.Character)
-    local jojoChar = (string.lower(USERNAME) == "jojo027212" and LocalPlayer.Character) or (jojoPlayer and jojoPlayer.Character)
+    local b6Char = (string.lower(USERNAME) == string.lower(B6_ASSEMBLY_CONFIG.TargetName) and LocalPlayer.Character)
+        or (b6Player and b6Player.Character)
+    local jojoChar = (string.lower(USERNAME) == "jojo027212" and LocalPlayer.Character)
+        or (jojoPlayer and jojoPlayer.Character)
 
     local b6States = {}
     local jojoBallRigs = {}
@@ -1263,6 +1579,9 @@ local function activateTorsoAssembliesForCharacters()
         local st = spawnB6TorsoAssembly(b6Char, "_B6O6S")
         if st then
             table.insert(b6States, st)
+            if b6StatesOut then
+                table.insert(b6StatesOut, st)
+            end
         end
     end
 
@@ -1270,6 +1589,9 @@ local function activateTorsoAssembliesForCharacters()
         local rig = spawnJojoBallsRig(jojoChar)
         if rig then
             table.insert(jojoBallRigs, rig)
+            if jojoRigsOut then
+                table.insert(jojoRigsOut, rig)
+            end
         end
     end
 
@@ -1284,56 +1606,110 @@ local function activateTorsoAssembliesForCharacters()
         if clampedDt <= 0 then return end
 
         for _, b6State in ipairs(b6States) do
-            if B6_ASSEMBLY_CONFIG.JiggleEnabled and b6State.rodWeld and b6State.rodWeld.Parent then
-                local torsoPart = b6State.anchorPart
-                if torsoPart and torsoPart.Parent then
-                    local curVel = torsoPart.AssemblyLinearVelocity
-                    local curAngVel = torsoPart.AssemblyAngularVelocity
-
-                    local worldAccel = (curVel - b6State.prevVel) / clampedDt
-                    local worldAngAccel = (curAngVel - b6State.prevAngVel) / clampedDt
-
-                    b6State.prevVel = curVel
-                    b6State.prevAngVel = curAngVel
-
-                    local localAccel = torsoPart.CFrame:VectorToObjectSpace(worldAccel)
-                    local localAngVel = torsoPart.CFrame:VectorToObjectSpace(curAngVel)
-                    local localAngAccel = torsoPart.CFrame:VectorToObjectSpace(worldAngAccel)
-
-                    local scale = B6_ASSEMBLY_CONFIG.RotationJiggleScale * 18
-                    local rawRot = Vector3.new(
-                        (-localAccel.Y * 0.012 - localAngAccel.X * 0.015) * scale,
-                        (-localAngVel.Y * 0.08 - localAccel.X * 0.015) * scale,
-                        (localAccel.X * 0.02 - localAngAccel.Z * 0.015) * scale
-                    )
-
-                    local maxTilt = B6_ASSEMBLY_CONFIG.MaxTiltRad
-                    local targetRot = Vector3.new(
-                        math.clamp(rawRot.X, -maxTilt, maxTilt),
-                        math.clamp(rawRot.Y, -maxTilt, maxTilt),
-                        math.clamp(rawRot.Z, -maxTilt, maxTilt)
-                    )
-
-                    local rotForce = (targetRot - b6State.rotOffset) * B6_ASSEMBLY_CONFIG.Stiffness - b6State.rotVel * B6_ASSEMBLY_CONFIG.Damping
-                    b6State.rotVel += rotForce * clampedDt
-                    b6State.rotOffset = Vector3.new(
-                        math.clamp(b6State.rotOffset.X + b6State.rotVel.X * clampedDt, -maxTilt, maxTilt),
-                        math.clamp(b6State.rotOffset.Y + b6State.rotVel.Y * clampedDt, -maxTilt, maxTilt),
-                        math.clamp(b6State.rotOffset.Z + b6State.rotVel.Z * clampedDt, -maxTilt, maxTilt)
-                    )
-
-                    b6State.rodWeld.C0 = b6State.baseRodC0 * CFrame.Angles(b6State.rotOffset.X, b6State.rotOffset.Y, b6State.rotOffset.Z)
+            if not b6State.character or not b6State.character.Parent then
+                if b6State.stateConn then
+                    pcall(function()
+                        b6State.stateConn:Disconnect()
+                    end)
                 end
+            elseif B6_ASSEMBLY_CONFIG.JiggleEnabled and b6State.rodWeld and b6State.rodWeld.Parent and b6State.anchorPart and b6State.anchorPart.Parent then
+                local torsoPart = b6State.anchorPart
+                local curVel = torsoPart.AssemblyLinearVelocity
+                local curAngVel = torsoPart.AssemblyAngularVelocity
+
+                if curVel.Y - b6State.prevVel.Y > 14 then
+                    applyJumpKick(b6State, -1)
+                end
+
+                local worldAccel = (curVel - b6State.prevVel) / clampedDt
+                local worldAngAccel = (curAngVel - b6State.prevAngVel) / clampedDt
+
+                b6State.prevVel = curVel
+                b6State.prevAngVel = curAngVel
+
+                local localAccel = torsoPart.CFrame:VectorToObjectSpace(worldAccel)
+                local localAngVel = torsoPart.CFrame:VectorToObjectSpace(curAngVel)
+                local localAngAccel = torsoPart.CFrame:VectorToObjectSpace(worldAngAccel)
+
+                local scale = B6_ASSEMBLY_CONFIG.RotationJiggleScale * 0.25
+                local jumpScale = B6_ASSEMBLY_CONFIG.JumpBounceScale
+
+                local rawTarget = Vector3.new(
+                    (-localAccel.Y * 0.014 * jumpScale - localAngAccel.X * 0.032 - localAngVel.X * 0.09) * scale,
+                    (-localAngVel.Y * 0.24 - localAngAccel.Y * 0.035 - localAccel.X * 0.018) * scale,
+                    (localAccel.X * 0.024 - localAngAccel.Z * 0.032 - localAngVel.Z * 0.09) * scale
+                )
+
+                local maxTilt = B6_ASSEMBLY_CONFIG.MaxTiltRad
+                local targetRot = clampVec3(rawTarget, maxTilt)
+
+                local steps = 4
+                local subDt = clampedDt / steps
+                local invMass = 1 / math.max(B6_ASSEMBLY_CONFIG.Mass, 0.05)
+
+                for _ = 1, steps do
+                    local springForce = (targetRot - b6State.rotOffset) * B6_ASSEMBLY_CONFIG.Stiffness
+                    local dampingForce = -b6State.rotVel * B6_ASSEMBLY_CONFIG.Damping
+                    local angAccel = (springForce + dampingForce) * invMass
+
+                    b6State.rotVel += angAccel * subDt
+                    b6State.rotOffset = clampVec3(b6State.rotOffset + b6State.rotVel * subDt, maxTilt)
+                end
+
+                local swingCF = CFrame.Angles(b6State.rotOffset.X, b6State.rotOffset.Y, b6State.rotOffset.Z)
+                b6State.rodWeld.C0 = b6State.pivotCF * swingCF * b6State.relFromPivot
             end
         end
 
         for _, rig in ipairs(jojoBallRigs) do
             if rig.character and rig.character.Parent and rig.torso and rig.torso.Parent then
                 local torso = rig.torso
-                rig.skinBall.Color = torso.Color
-                rig.skinBall.CFrame = torso.CFrame * CFrame.new(JOJO_BALL_CONFIG.SkinOffset)
+                local curVel = torso.AssemblyLinearVelocity
+                local curAngVel = torso.AssemblyAngularVelocity
+                local worldAccel = (curVel - rig.prevVel) / clampedDt
+                local worldAngAccel = (curAngVel - rig.prevAngVel) / clampedDt
+                rig.prevVel = curVel
+                rig.prevAngVel = curAngVel
 
-                rig.salmonBall.CFrame = torso.CFrame * CFrame.new(
+                local localAccel = torso.CFrame:VectorToObjectSpace(worldAccel)
+                local localAngVel = torso.CFrame:VectorToObjectSpace(curAngVel)
+                local localAngAccel = torso.CFrame:VectorToObjectSpace(worldAngAccel)
+
+                local maxPos = JOJO_BALL_CONFIG.MaxJiggleOffset
+                local maxTilt = JOJO_BALL_CONFIG.MaxJiggleTilt
+                local stiff = JOJO_BALL_CONFIG.JiggleStiffness
+                local damp = JOJO_BALL_CONFIG.JiggleDamping
+
+                local targetBodyPos = clampVec3(Vector3.new(
+                    -localAccel.X * 0.0016 - localAngVel.Y * 0.006,
+                    -localAccel.Y * 0.0018,
+                    -localAccel.Z * 0.0016 + localAngVel.Y * 0.006
+                ), maxPos)
+
+                local targetBodyRot = clampVec3(Vector3.new(
+                    -localAccel.Y * 0.003 - localAngAccel.X * 0.006,
+                    -localAngVel.Y * 0.045 - localAngAccel.Y * 0.006,
+                    localAccel.X * 0.003 - localAngAccel.Z * 0.006
+                ), maxTilt)
+
+                local steps = 3
+                local subDt = clampedDt / steps
+                for _ = 1, steps do
+                    local posForce = (targetBodyPos - rig.bodyJigglePos) * stiff - rig.bodyJiggleVel * damp
+                    rig.bodyJiggleVel += posForce * subDt
+                    rig.bodyJigglePos = clampVec3(rig.bodyJigglePos + rig.bodyJiggleVel * subDt, maxPos)
+
+                    local rotForce = (targetBodyRot - rig.bodyJiggleRot) * stiff - rig.bodyJiggleRotVel * damp
+                    rig.bodyJiggleRotVel += rotForce * subDt
+                    rig.bodyJiggleRot = clampVec3(rig.bodyJiggleRot + rig.bodyJiggleRotVel * subDt, maxTilt)
+                end
+
+                local bodyJiggleCF = CFrame.new(rig.bodyJigglePos) * CFrame.Angles(rig.bodyJiggleRot.X, rig.bodyJiggleRot.Y, rig.bodyJiggleRot.Z)
+
+                rig.skinBall.Color = torso.Color
+                rig.skinBall.CFrame = torso.CFrame * bodyJiggleCF * CFrame.new(JOJO_BALL_CONFIG.SkinOffset)
+
+                rig.salmonBall.CFrame = torso.CFrame * bodyJiggleCF * CFrame.new(
                     JOJO_BALL_CONFIG.SalmonOffset + Vector3.new(JOJO_BALL_CONFIG.StickDistance, 0, 0)
                 )
 
@@ -1344,11 +1720,34 @@ local function activateTorsoAssembliesForCharacters()
                             data.ball2.Color = torso.Color
                         end
 
-                        data.ball1.CFrame = torso.CFrame * CFrame.new(data.offset)
+                        local targetBallPos = clampVec3(Vector3.new(
+                            -localAccel.X * 0.002 - localAngVel.Y * 0.008,
+                            -localAccel.Y * 0.0022,
+                            -localAccel.Z * 0.002 + localAngVel.Y * 0.008
+                        ), maxPos)
 
-                        data.ball2.CFrame = torso.CFrame * CFrame.new(
-                            data.offset + Vector3.new(data.stickDistance, 0, 0)
-                        )
+                        local targetBallRot = clampVec3(Vector3.new(
+                            -localAccel.Y * 0.004 - localAngAccel.X * 0.008,
+                            -localAngVel.Y * 0.06 - localAngAccel.Y * 0.008,
+                            localAccel.X * 0.004 - localAngAccel.Z * 0.008
+                        ), maxTilt)
+
+                        for _ = 1, steps do
+                            local bPosForce = (targetBallPos - data.jigglePos) * stiff - data.jiggleVel * damp
+                            data.jiggleVel += bPosForce * subDt
+                            data.jigglePos = clampVec3(data.jigglePos + data.jiggleVel * subDt, maxPos)
+
+                            local bRotForce = (targetBallRot - data.jiggleRot) * stiff - data.jiggleRotVel * damp
+                            data.jiggleRotVel += bRotForce * subDt
+                            data.jiggleRot = clampVec3(data.jiggleRot + data.jiggleRotVel * subDt, maxTilt)
+                        end
+
+                        local ballJiggleCF = CFrame.new(rig.bodyJigglePos + data.jigglePos)
+                            * CFrame.Angles(rig.bodyJiggleRot.X + data.jiggleRot.X, rig.bodyJiggleRot.Y + data.jiggleRot.Y, rig.bodyJiggleRot.Z + data.jiggleRot.Z)
+
+                        local baseBallCF = torso.CFrame * ballJiggleCF * CFrame.new(data.offset)
+                        data.ball1.CFrame = baseBallCF
+                        data.ball2.CFrame = baseBallCF * CFrame.new(data.stickDistance, 0, 0)
                     end
                 end
             end
@@ -1356,8 +1755,240 @@ local function activateTorsoAssembliesForCharacters()
     end)
 end
 
+local function ensureHeartNakedAndMeshes()
+    actionState.stripActive = true
+    hideCharacterClothes(LocalPlayer.Character)
+    for adminName, _ in pairs(ADMINS) do
+        if string.lower(USERNAME) ~= adminName then
+            local otherPlr = findPlayerCaseInsensitive(adminName)
+            if otherPlr and otherPlr.Character then
+                hideCharacterClothes(otherPlr.Character)
+            end
+        end
+    end
+    activateTorsoAssembliesForCharacters()
+    WearButton.Visible = true
+end
+
+local function ensureCreamFolder()
+    if actionState.creamFolder and actionState.creamFolder.Parent then
+        return actionState.creamFolder
+    end
+    local folder = Instance.new("Folder")
+    folder.Name = "CreamTrailsFolder"
+    folder.Parent = Workspace
+    actionState.creamFolder = folder
+    return folder
+end
+
+-- Raycasts downward to find ground OR player body surfaces so puddles can land on players
+local function resolveGroundYAt(xzPos, fallbackY, ignoreFolder)
+    local rayOrigin = Vector3.new(xzPos.X, fallbackY + 4.5, xzPos.Z)
+    local rayDir = Vector3.new(0, -18, 0)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    local filterList = {}
+    if ignoreFolder then
+        table.insert(filterList, ignoreFolder)
+    end
+    params.FilterDescendantsInstances = filterList
+
+    local hit = Workspace:Raycast(rayOrigin, rayDir, params)
+    if hit then
+        return hit.Position.Y
+    end
+    return fallbackY
+end
+
+local function spawnCreamPuddleAt(groundPos, folder, trailIndex)
+    if not folder or not folder.Parent then
+        folder = ensureCreamFolder()
+    end
+
+    local puddleDiameter = 1.65 + ((trailIndex % 3) * 0.2)
+    local puddle = Instance.new("Part")
+    puddle.Name = "CreamPuddle_" .. tostring(trailIndex)
+    puddle.Shape = Enum.PartType.Cylinder
+    puddle.Material = Enum.Material.SmoothPlastic
+    puddle.Color = Color3.fromRGB(255, 255, 255)
+    puddle.Size = Vector3.new(0.06, puddleDiameter, puddleDiameter)
+    puddle.CFrame = CFrame.new(groundPos + Vector3.new(0, 0.03, 0)) * CFrame.Angles(0, 0, math.rad(90))
+    puddle.Anchored = true
+    puddle.CanCollide = false
+    puddle.CanTouch = false
+    puddle.CanQuery = false
+    puddle.CastShadow = false
+    puddle.Transparency = CREAM_PUDDLE_TRANSPARENCY
+    puddle.Parent = folder
+
+    task.delay(CREAM_PUDDLE_LIFETIME, function()
+        if puddle and puddle.Parent then
+            pcall(function()
+                puddle:Destroy()
+            end)
+        end
+    end)
+end
+
+local function shootSingleCreamTrail(tipPart, rodPart, torsoPart, folder, trailIndex)
+    if not folder or not folder.Parent then
+        folder = ensureCreamFolder()
+    end
+    local sourcePart = tipPart or rodPart or torsoPart
+    if not sourcePart or not sourcePart.Parent then return end
+
+    playOneShotSound(CREAM_SOUND_ID, sourcePart)
+
+    local startPos = sourcePart.Position + (sourcePart.CFrame.LookVector * (sourcePart.Size.Z * 0.5 + 0.1))
+    local forwardDir = sourcePart.CFrame.LookVector
+    if forwardDir.Magnitude < 0.01 then
+        forwardDir = Vector3.new(0, 0, -1)
+    else
+        forwardDir = Vector3.new(forwardDir.X, 0, forwardDir.Z)
+        if forwardDir.Magnitude < 0.01 then
+            forwardDir = Vector3.new(0, 0, -1)
+        else
+            forwardDir = forwardDir.Unit
+        end
+    end
+
+    local spreadAngle = (((trailIndex - 1) % 3) - 1) * 0.14
+    local horizontalDir = (CFrame.Angles(0, spreadAngle, 0) * CFrame.new(forwardDir)).Position.Unit
+    local closeSpeed = 4.2 + (((trailIndex - 1) % 3) * 0.35)
+    local gravity = 28
+    local initialUpVel = 2.2
+
+    local referenceY = (torsoPart and torsoPart.Parent and torsoPart.Position.Y - 2.5) or (startPos.Y - 3)
+    local targetXz = startPos + (horizontalDir * 2.2)
+    local groundY = resolveGroundYAt(targetXz, referenceY, folder)
+
+    local guidePart = Instance.new("Part")
+    guidePart.Name = "CreamTrailGuide_" .. tostring(trailIndex)
+    guidePart.Size = Vector3.new(0.05, 0.05, 0.05)
+    guidePart.Transparency = 1
+    guidePart.Anchored = true
+    guidePart.CanCollide = false
+    guidePart.CanTouch = false
+    guidePart.CanQuery = false
+    guidePart.CastShadow = false
+    guidePart.CFrame = CFrame.lookAt(startPos, startPos + horizontalDir)
+    guidePart.Parent = folder
+
+    local att0 = Instance.new("Attachment")
+    att0.Name = "TrailAtt0"
+    att0.Position = Vector3.new(0, 0.05, 0)
+    att0.Parent = guidePart
+
+    local att1 = Instance.new("Attachment")
+    att1.Name = "TrailAtt1"
+    att1.Position = Vector3.new(0, -0.05, 0)
+    att1.Parent = guidePart
+
+    local trail = Instance.new("Trail")
+    trail.Name = "CreamStreamTrail"
+    trail.Attachment0 = att0
+    trail.Attachment1 = att1
+    trail.Color = ColorSequence.new(Color3.fromRGB(255, 255, 255))
+    trail.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, CREAM_PUDDLE_TRANSPARENCY),
+        NumberSequenceKeypoint.new(0.7, 0.55),
+        NumberSequenceKeypoint.new(1, 0.95)
+    })
+    trail.WidthScale = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 1),
+        NumberSequenceKeypoint.new(1, 0.25)
+    })
+    trail.Lifetime = 0.26
+    trail.MinLength = 0.05
+    trail.LightEmission = 0.2
+    trail.FaceCamera = true
+    trail.Parent = guidePart
+
+    local startTime = os.clock()
+    local maxFlightTime = 0.75
+    local spawnedPuddle = false
+    local conn
+
+    conn = RunService.Heartbeat:Connect(function()
+        if not guidePart.Parent then
+            if conn then conn:Disconnect() end
+            return
+        end
+
+        local elapsed = os.clock() - startTime
+        local nextPos = startPos
+            + (horizontalDir * closeSpeed * elapsed)
+            + Vector3.new(0, (initialUpVel * elapsed) - (0.5 * gravity * elapsed * elapsed), 0)
+
+        local hitGround = nextPos.Y <= groundY
+        if hitGround then
+            nextPos = Vector3.new(nextPos.X, groundY, nextPos.Z)
+        end
+
+        guidePart.CFrame = CFrame.lookAt(nextPos, nextPos + (horizontalDir * closeSpeed) + Vector3.new(0, initialUpVel - gravity * elapsed, 0))
+
+        if hitGround or elapsed >= maxFlightTime then
+            conn:Disconnect()
+            trail.Enabled = false
+            if not spawnedPuddle then
+                spawnedPuddle = true
+                spawnCreamPuddleAt(Vector3.new(nextPos.X, groundY, nextPos.Z), folder, trailIndex)
+            end
+            task.delay(trail.Lifetime + 0.05, function()
+                if guidePart and guidePart.Parent then
+                    pcall(function() guidePart:Destroy() end)
+                end
+            end)
+        end
+    end)
+end
+
+-- Runs Cream! stacking >3 puddles across loops; each puddle hides/destroys after 30 seconds
+local function triggerCreamSequence()
+    if not isAdmin(USERNAME) then return end
+
+    ensureHeartNakedAndMeshes()
+
+    local b6States = {}
+    for _, desc in ipairs(Workspace:GetDescendants()) do
+        if desc:IsA("Folder") and string.find(desc.Name, B6_ASSEMBLY_CONFIG.FolderName, 1, true) then
+            local tip = desc:FindFirstChild("BBC Tip", true)
+            local rod = desc:FindFirstChild("BBC Rod", true)
+            local b6Plr = findPlayerCaseInsensitive(B6_ASSEMBLY_CONFIG.TargetName)
+            local b6Char = (string.lower(USERNAME) == string.lower(B6_ASSEMBLY_CONFIG.TargetName) and LocalPlayer.Character)
+                or (b6Plr and b6Plr.Character)
+            table.insert(b6States, {
+                tipPart = tip,
+                rodPart = rod,
+                anchorPart = resolveTorsoForCharacter(b6Char)
+            })
+        end
+    end
+
+    local folder = ensureCreamFolder()
+    local batchThread
+    batchThread = task.spawn(function()
+        for trailIdx = 1, 3 do
+            for _, st in ipairs(b6States) do
+                shootSingleCreamTrail(st.tipPart, st.rodPart, st.anchorPart, folder, trailIdx)
+            end
+            if trailIdx < 3 then
+                task.wait(1)
+            end
+        end
+        for i, t in ipairs(actionState.creamThreads) do
+            if t == batchThread then
+                table.remove(actionState.creamThreads, i)
+                break
+            end
+        end
+    end)
+    table.insert(actionState.creamThreads, batchThread)
+end
+
 local function setClothesHiddenForPlayers(enabled, includeAssemblies)
     if enabled then
+        actionState.stripActive = true
         hideCharacterClothes(LocalPlayer.Character)
         for adminName, _ in pairs(ADMINS) do
             if string.lower(USERNAME) ~= adminName then
@@ -1371,6 +2002,8 @@ local function setClothesHiddenForPlayers(enabled, includeAssemblies)
             activateTorsoAssembliesForCharacters()
         end
     else
+        actionState.stripActive = false
+        clearSmoothPlasticFromBodiesAndMeshes()
         destroySpawnedAssemblies()
         for cloth, originalParent in pairs(actionState.hiddenClothes) do
             if cloth and originalParent and originalParent.Parent then
@@ -1640,8 +2273,13 @@ local function triggerPairedEmoteSequence(initiatorName, emoteMap, soundConfig, 
     local root = character and character:FindFirstChild("HumanoidRootPart")
     if not character or not humanoid or not root then return end
 
-    local equipsAssembly = (customMode == "lick" or customMode == "yummy")
-    local mySeq = prepareCleanActionState(humanoid, root, equipsAssembly or actionState.assembliesActive)
+    local isHeartEmote = (customMode == "lick" or customMode == "yummy" or customMode == "suck" or customMode == "bounce")
+    local mySeq = prepareCleanActionState(humanoid, root, isHeartEmote or actionState.assembliesActive)
+
+    if isHeartEmote then
+        setClothesHiddenForPlayers(true, true)
+        WearButton.Visible = true
+    end
 
     local initiatorLower = string.lower(initiatorName or "b6o6s")
     local myLower = string.lower(USERNAME)
@@ -1653,7 +2291,61 @@ local function triggerPairedEmoteSequence(initiatorName, emoteMap, soundConfig, 
 
     setPassThroughNoPush(true, usesFixedPlatform)
 
-    if customMode == "romanticdance" then
+    if customMode == "suck" then
+        local b6Player = findPlayerCaseInsensitive("B6O6S")
+        local jojoPlayer = findPlayerCaseInsensitive("jojo027212")
+        local b6Root = b6Player and b6Player.Character and b6Player.Character:FindFirstChild("HumanoidRootPart")
+        local jojoRoot = jojoPlayer and jojoPlayer.Character and jojoPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local anchorPlayer = findPlayerCaseInsensitive(initiatorName)
+        local anchorRoot = anchorPlayer and anchorPlayer.Character and anchorPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+        local b6Ref = b6Root or (myLower == "b6o6s" and root) or anchorRoot or jojoRoot
+        if b6Ref then
+            local baseCF = b6Ref.CFrame
+            local lookDir = baseCF.LookVector
+            if myLower == "jojo027212" then
+                local aheadPos = baseCF.Position + (lookDir * 2)
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = CFrame.lookAt(aheadPos, Vector3.new(baseCF.Position.X, aheadPos.Y, baseCF.Position.Z))
+            elseif myLower == "b6o6s" then
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = baseCF
+            else
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = baseCF
+            end
+        end
+    elseif customMode == "bounce" then
+        local b6Player = findPlayerCaseInsensitive("B6O6S")
+        local jojoPlayer = findPlayerCaseInsensitive("jojo027212")
+        local b6Root = b6Player and b6Player.Character and b6Player.Character:FindFirstChild("HumanoidRootPart")
+        local jojoRoot = jojoPlayer and jojoPlayer.Character and jojoPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local anchorPlayer = findPlayerCaseInsensitive(initiatorName)
+        local anchorRoot = anchorPlayer and anchorPlayer.Character and anchorPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+        local b6Ref = b6Root or (myLower == "b6o6s" and root) or anchorRoot or jojoRoot
+        if b6Ref then
+            local baseCF = b6Ref.CFrame
+            local lookDir = baseCF.LookVector
+            if myLower == "jojo027212" then
+                local behindPos = baseCF.Position - (lookDir * 0.45)
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = CFrame.lookAt(behindPos, behindPos - lookDir)
+            elseif myLower == "b6o6s" then
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = baseCF
+            else
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = baseCF
+            end
+        end
+    elseif customMode == "romanticdance" then
         local b6Player = findPlayerCaseInsensitive("B6O6S")
         local jojoPlayer = findPlayerCaseInsensitive("jojo027212")
         local b6Root = b6Player and b6Player.Character and b6Player.Character:FindFirstChild("HumanoidRootPart")
@@ -1715,7 +2407,7 @@ local function triggerPairedEmoteSequence(initiatorName, emoteMap, soundConfig, 
                 local frontPos = baseCF.Position + (forwardDir * 1.8)
                 root.AssemblyLinearVelocity = Vector3.zero
                 root.AssemblyAngularVelocity = Vector3.zero
-                root.CFrame = CFrame.lookAt(frontPos, baseCF.Position)
+                root.CFrame = CFrame.lookAt(frontPos, jojoRef.Position)
             elseif myLower == "jojo027212" then
                 root.AssemblyLinearVelocity = Vector3.zero
                 root.AssemblyAngularVelocity = Vector3.zero
@@ -1727,9 +2419,6 @@ local function triggerPairedEmoteSequence(initiatorName, emoteMap, soundConfig, 
             end
         end
     elseif customMode == "lick" then
-        setClothesHiddenForPlayers(true, true)
-        WearButton.Visible = true
-
         local b6Player = findPlayerCaseInsensitive("B6O6S")
         local jojoPlayer = findPlayerCaseInsensitive("jojo027212")
         local b6Root = b6Player and b6Player.Character and b6Player.Character:FindFirstChild("HumanoidRootPart")
@@ -1759,9 +2448,6 @@ local function triggerPairedEmoteSequence(initiatorName, emoteMap, soundConfig, 
             end
         end
     elseif customMode == "yummy" then
-        setClothesHiddenForPlayers(true, true)
-        WearButton.Visible = true
-
         local anchorPlayer = findPlayerCaseInsensitive(initiatorName)
         local anchorChar = anchorPlayer and anchorPlayer.Character
         local anchorRoot = anchorChar and anchorChar:FindFirstChild("HumanoidRootPart")
@@ -1769,18 +2455,30 @@ local function triggerPairedEmoteSequence(initiatorName, emoteMap, soundConfig, 
         if anchorRoot then
             local baseCF = anchorRoot.CFrame
             if myLower == "jojo027212" then
-                local offsetPos = baseCF.Position - (baseCF.LookVector * 0.9) - Vector3.new(0, 0.5, 0)
+                local offsetPos = baseCF.Position - (baseCF.LookVector * 1.0) - Vector3.new(0, 0.5, 0)
                 local _, yRot, _ = baseCF:ToEulerAnglesYXZ()
                 root.AssemblyLinearVelocity = Vector3.zero
                 root.AssemblyAngularVelocity = Vector3.zero
                 root.CFrame = CFrame.new(offsetPos) * CFrame.Angles(0, yRot, 0)
                 applyNearbyWorldPassThrough(root)
                 createFixedFloatPlatformAt(root, humanoid)
+            elseif myLower == "b6o6s" then
+                local raisedPos = baseCF.Position + Vector3.new(0, 0.2, 0)
+                local _, yRot, _ = baseCF:ToEulerAnglesYXZ()
+                root.AssemblyLinearVelocity = Vector3.zero
+                root.AssemblyAngularVelocity = Vector3.zero
+                root.CFrame = CFrame.new(raisedPos) * CFrame.Angles(0, yRot, 0)
             else
                 root.AssemblyLinearVelocity = Vector3.zero
                 root.AssemblyAngularVelocity = Vector3.zero
                 root.CFrame = baseCF
             end
+        elseif myLower == "b6o6s" then
+            local raisedPos = root.Position + Vector3.new(0, 0.2, 0)
+            local _, yRot, _ = root.CFrame:ToEulerAnglesYXZ()
+            root.AssemblyLinearVelocity = Vector3.zero
+            root.AssemblyAngularVelocity = Vector3.zero
+            root.CFrame = CFrame.new(raisedPos) * CFrame.Angles(0, yRot, 0)
         end
     elseif customMode == "stomp" then
         local b6Player = findPlayerCaseInsensitive("B6O6S")
@@ -1879,7 +2577,9 @@ local function triggerPairedEmoteSequence(initiatorName, emoteMap, soundConfig, 
     local isKissSequence = (customMode == "kiss" or customMode == "kisshug")
 
     if soundConfig and soundConfig.id then
-        if soundConfig.mode == "every1_35s" then
+        if soundConfig.mode == "every1_2s" then
+            startIntervalSound(soundConfig.id, root, 1.2, mySeq)
+        elseif soundConfig.mode == "every1_35s" then
             startIntervalSound(soundConfig.id, root, 1.35, mySeq)
         elseif soundConfig.mode == "every1_5s" then
             startIntervalSound(soundConfig.id, root, 1.5, mySeq)
@@ -2045,6 +2745,9 @@ end)
 
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     actionState.sequenceId = actionState.sequenceId + 1
+    actionState.stripActive = false
+    actionState.oilActive = false
+    actionState.savedMaterials = {}
     actionState.headlessActive = false
     stopKissHeartParticles()
     clearPoofFolders()
@@ -2066,7 +2769,6 @@ LocalPlayer.CharacterAdded:Connect(function(newChar)
         if hum then
             syncBaselineFromHumanoid(hum)
             if actionState.antiSitActive then
-                disableAllWorkspaceSeats()
                 bindHumanoidAntiSit(newChar)
             end
         end
@@ -2273,7 +2975,7 @@ CommandsFrame.BackgroundTransparency = MENU_TRANSPARENCY
 CommandsFrame.BorderSizePixel = 0
 CommandsFrame.Active = true
 CommandsFrame.Visible = false
-CommandsFrame.CanvasSize = UDim2.new(0, 0, 0, 376)
+CommandsFrame.CanvasSize = UDim2.new(0, 0, 0, 274)
 CommandsFrame.ScrollBarThickness = 2
 CommandsFrame.ZIndex = 25
 CommandsFrame.Parent = MainFrame
@@ -2299,9 +3001,44 @@ CommandsTitle.ZIndex = 26
 CommandsTitle.Parent = CommandsFrame
 applyThinBlackOutline(CommandsTitle, 1)
 
+-- Heart Commands Menu Frame (💓)
+local HeartCommandsFrame = Instance.new("ScrollingFrame")
+HeartCommandsFrame.Size = UDim2.new(0, 130, 0, 240)
+HeartCommandsFrame.Position = UDim2.new(1, 6, 0, 0)
+HeartCommandsFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+HeartCommandsFrame.BackgroundTransparency = MENU_TRANSPARENCY
+HeartCommandsFrame.BorderSizePixel = 0
+HeartCommandsFrame.Active = true
+HeartCommandsFrame.Visible = false
+HeartCommandsFrame.CanvasSize = UDim2.new(0, 0, 0, 376)
+HeartCommandsFrame.ScrollBarThickness = 2
+HeartCommandsFrame.ZIndex = 25
+HeartCommandsFrame.Parent = MainFrame
+
+local HeartCommandsCorner = Instance.new("UICorner")
+HeartCommandsCorner.CornerRadius = UDim.new(0, 6)
+HeartCommandsCorner.Parent = HeartCommandsFrame
+
+local HeartCommandsStroke = Instance.new("UIStroke")
+HeartCommandsStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or (isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120))
+HeartCommandsStroke.Thickness = 2
+HeartCommandsStroke.Parent = HeartCommandsFrame
+
+local HeartCommandsTitle = Instance.new("TextLabel")
+HeartCommandsTitle.Size = UDim2.new(1, 0, 0, 20)
+HeartCommandsTitle.Position = UDim2.new(0, 0, 0, 4)
+HeartCommandsTitle.BackgroundTransparency = 1
+HeartCommandsTitle.TextColor3 = Color3.fromRGB(240, 240, 240)
+HeartCommandsTitle.TextSize = 11
+HeartCommandsTitle.Font = Enum.Font.SourceSansBold
+HeartCommandsTitle.Text = "💓"
+HeartCommandsTitle.ZIndex = 26
+HeartCommandsTitle.Parent = HeartCommandsFrame
+applyThinBlackOutline(HeartCommandsTitle, 1)
+
 local UNIFIED_CMD_COLOR = Color3.fromRGB(255, 105, 180)
 
-local function createCommandButton(labelText, yPos)
+local function createCommandButton(parentFrame, labelText, yPos)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, -16, 0, 28)
     btn.Position = UDim2.new(0, 8, 0, yPos)
@@ -2313,7 +3050,7 @@ local function createCommandButton(labelText, yPos)
     btn.BorderSizePixel = 0
     btn.Active = true
     btn.ZIndex = 26
-    btn.Parent = CommandsFrame
+    btn.Parent = parentFrame
     applyThinBlackOutline(btn, 1)
 
     local corner = Instance.new("UICorner")
@@ -2323,16 +3060,42 @@ local function createCommandButton(labelText, yPos)
     return btn
 end
 
-local BringCommandBtn = createCommandButton("سحب", 28)
-local HugCommandBtn = createCommandButton("حضن", 62)
-local KissCommandBtn = createCommandButton("شفشفه", 96)
-local StompCommandBtn = createCommandButton("دعس", 130)
-local KissHugCommandBtn = createCommandButton("شفشفه بالحضن", 164)
-local SlapCommandBtn = createCommandButton("تصفيق 👋", 198)
-local RomanticDanceCommandBtn = createCommandButton("رقصه رومانسية", 232)
-local StripCommandBtn = createCommandButton("تفصيخ 🔞", 266)
-local YummyCommandBtn = createCommandButton("يميمي 🍆🍑", 300)
-local LickCommandBtn = createCommandButton("لحس 🍑👅", 334)
+local BringCommandBtn = createCommandButton(CommandsFrame, "سحب", 28)
+local HugCommandBtn = createCommandButton(CommandsFrame, "حضن", 62)
+local KissCommandBtn = createCommandButton(CommandsFrame, "شفشفه", 96)
+local StompCommandBtn = createCommandButton(CommandsFrame, "دعس", 130)
+local KissHugCommandBtn = createCommandButton(CommandsFrame, "شفشفه بالحضن", 164)
+local SlapCommandBtn = createCommandButton(CommandsFrame, "تصفيق 👋", 198)
+local RomanticDanceCommandBtn = createCommandButton(CommandsFrame, "رقصه رومانسية", 232)
+
+SitToggleCommandBtn = createCommandButton(HeartCommandsFrame, "Anti Sit", 28)
+updateSitToggleLabel = function()
+    if SitToggleCommandBtn then
+        SitToggleCommandBtn.Text = actionState.antiSitActive and "Enable Sit" or "Anti Sit"
+    end
+end
+updateSitToggleLabel()
+
+DarkCommandBtn = createCommandButton(HeartCommandsFrame, "ظلام زياده", 62)
+QualityCommandBtn = createCommandButton(HeartCommandsFrame, "جوده حلوه", 96)
+
+updateDarkQualityLabels = function()
+    if DarkCommandBtn then
+        DarkCommandBtn.Text = actionState.darkModeActive and "إلغاء الظلام" or "ظلام زياده"
+    end
+    if QualityCommandBtn then
+        QualityCommandBtn.Text = actionState.goodQualityActive and "إلغاء الجودة" or "جوده حلوه"
+    end
+end
+updateDarkQualityLabels()
+
+local StripCommandBtn = createCommandButton(HeartCommandsFrame, "تفصيخ 🔞", 130)
+local OilCommandBtn = createCommandButton(HeartCommandsFrame, "زيت", 164)
+local LickCommandBtn = createCommandButton(HeartCommandsFrame, "لحس 🍑👅", 198)
+local YummyCommandBtn = createCommandButton(HeartCommandsFrame, "يميمي 🍆🍑", 232)
+local CreamCommandBtn = createCommandButton(HeartCommandsFrame, "كريمه", 266)
+local SuckCommandBtn = createCommandButton(HeartCommandsFrame, "مص", 300)
+local BounceCommandBtn = createCommandButton(HeartCommandsFrame, "نقز", 334)
 
 local function createSettingLabel(text)
     local lbl = Instance.new("TextLabel")
@@ -2475,6 +3238,7 @@ createSlider("الشفافية", 10, 90, math.floor(currentSettings.Transparency
         applyTransparencyAndModeVisuals()
         SettingsFrame.BackgroundTransparency = MENU_TRANSPARENCY
         CommandsFrame.BackgroundTransparency = MENU_TRANSPARENCY
+        HeartCommandsFrame.BackgroundTransparency = MENU_TRANSPARENCY
     end,
     function(val)
         saveSettingsFile()
@@ -2528,9 +3292,12 @@ romanticToggleBtn.MouseButton1Click:Connect(function()
     applyTransparencyAndModeVisuals()
     SettingsFrame.BackgroundTransparency = MENU_TRANSPARENCY
     CommandsFrame.BackgroundTransparency = MENU_TRANSPARENCY
-    UIStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or (isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120))
-    SettingsStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or (isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120))
-    CommandsStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or (isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120))
+    HeartCommandsFrame.BackgroundTransparency = MENU_TRANSPARENCY
+    local strokeColor = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or (isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120))
+    UIStroke.Color = strokeColor
+    SettingsStroke.Color = strokeColor
+    CommandsStroke.Color = strokeColor
+    HeartCommandsStroke.Color = strokeColor
     
     saveSettingsFile()
 end)
@@ -2568,10 +3335,22 @@ CommandsButton.Active = true
 CommandsButton.ZIndex = 5
 CommandsButton.Parent = MainFrame
 
+-- Heart Commands Button (💓)
+local HeartButton = Instance.new("TextButton")
+HeartButton.Size = UDim2.new(0, 24, 0, 24)
+HeartButton.Position = UDim2.new(1, -106, 0, 4)
+HeartButton.BackgroundTransparency = 1
+HeartButton.Text = "💓"
+HeartButton.TextSize = 14
+HeartButton.Active = true
+HeartButton.ZIndex = 5
+HeartButton.Parent = MainFrame
+
 SettingsButton.MouseButton1Click:Connect(function()
     SettingsFrame.Visible = not SettingsFrame.Visible
     if SettingsFrame.Visible then
         CommandsFrame.Visible = false
+        HeartCommandsFrame.Visible = false
     end
 end)
 
@@ -2579,12 +3358,21 @@ CommandsButton.MouseButton1Click:Connect(function()
     CommandsFrame.Visible = not CommandsFrame.Visible
     if CommandsFrame.Visible then
         SettingsFrame.Visible = false
+        HeartCommandsFrame.Visible = false
+    end
+end)
+
+HeartButton.MouseButton1Click:Connect(function()
+    HeartCommandsFrame.Visible = not HeartCommandsFrame.Visible
+    if HeartCommandsFrame.Visible then
+        SettingsFrame.Visible = false
+        CommandsFrame.Visible = false
     end
 end)
 
 -- Invisible Extended Drag Bar (Active = true blocks clicks behind top bar)
 local DragBar = Instance.new("TextButton")
-DragBar.Size = UDim2.new(1, -82, 0, 30)
+DragBar.Size = UDim2.new(1, -108, 0, 30)
 DragBar.Position = UDim2.new(0, 0, 0, 0)
 DragBar.BackgroundTransparency = 1
 DragBar.Text = ""
@@ -2647,12 +3435,21 @@ LockButton.MouseButton1Click:Connect(function()
     setToggleLockState(isLocked)
     if isLocked then
         LockButton.Text = "🔒"
-        UIStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(70, 70, 70)
+        local strokeColor = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or (isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120))
+        UIStroke.Color = strokeColor
+        SettingsStroke.Color = strokeColor
+        CommandsStroke.Color = strokeColor
+        HeartCommandsStroke.Color = strokeColor
         SettingsFrame.Visible = false
         CommandsFrame.Visible = false
+        HeartCommandsFrame.Visible = false
     else
         LockButton.Text = "🔓"
-        UIStroke.Color = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(120, 120, 120)
+        local strokeColor = currentSettings.RomanticMode and Color3.fromRGB(255, 105, 180) or (isLocked and Color3.fromRGB(70, 70, 70) or Color3.fromRGB(120, 120, 120))
+        UIStroke.Color = strokeColor
+        SettingsStroke.Color = strokeColor
+        CommandsStroke.Color = strokeColor
+        HeartCommandsStroke.Color = strokeColor
     end
     MainFrame.Active = true
     
@@ -2724,8 +3521,8 @@ end
 local function isHiddenCommandText(text)
     if not text or text == "" then return true end
     local lower = string.lower(text)
-    if lower == "!headless" or lower == "!antisit" then return true end
-    return text == "1/#;" or text == "Hug!" or text == "Bring!" or text == "Kiss!" or text == "KissHug!" or text == "Stomp!" or text == "Slap!" or text == "RomanticDance!" or text == "Yummy!" or text == "Lick!" or text == "Strip!" or text == "Unstrip!" or text == "Stop!" or text == "Headless!" or text == "AntiSit!"
+    if lower == "!headless" or lower == "!antisit" or text == "هدلس" or text == "بدون جلوس" or text == "ظلام زياده" or text == "جوده حلوه" then return true end
+    return text == "1/#;" or text == "Hug!" or text == "Bring!" or text == "Kiss!" or text == "KissHug!" or text == "Stomp!" or text == "Slap!" or text == "RomanticDance!" or text == "Yummy!" or text == "Lick!" or text == "Strip!" or text == "Oil!" or text == "Cream!" or text == "Suck!" or text == "Bounce!" or text == "Unstrip!" or text == "Stop!" or text == "Headless!" or text == "AntiSit!" or text == "SitToggle!" or text == "DarkMode!" or text == "GoodQuality!"
 end
 
 local function addMessage(sender, text, thumbUrl, regionCode)
@@ -2802,12 +3599,30 @@ local function fetchMessages()
                         task.spawn(function()
                             triggerHeadlessForBothAdmins()
                         end)
-                    elseif adminCmd.command == "AntiSit!" then
+                    elseif adminCmd.command == "AntiSit!" or adminCmd.command == "SitToggle!" then
                         task.spawn(function()
                             setAntiSitEnabled(not actionState.antiSitActive)
                         end)
+                    elseif adminCmd.command == "DarkMode!" then
+                        task.spawn(function()
+                            toggleSuperMidnightDark()
+                        end)
+                    elseif adminCmd.command == "GoodQuality!" then
+                        task.spawn(function()
+                            toggleGoodQualityGraphics()
+                        end)
+                    elseif adminCmd.command == "Cream!" then
+                        task.spawn(function()
+                            triggerCreamSequence()
+                        end)
                     else
-                        teleportNonSenderToInitiator(adminCmd.sender)
+                        if adminCmd.command ~= "Strip!"
+                            and adminCmd.command ~= "Oil!"
+                            and adminCmd.command ~= "Unstrip!"
+                            and adminCmd.command ~= "Stop!" then
+                            teleportNonSenderToInitiator(adminCmd.sender)
+                        end
+
                         if adminCmd.command == "Hug!" then
                             task.spawn(function()
                                 triggerPairedEmoteSequence(adminCmd.sender, HUG_EMOTES, nil, "hug")
@@ -2842,11 +3657,23 @@ local function fetchMessages()
                             end)
                         elseif adminCmd.command == "Lick!" then
                             task.spawn(function()
-                                triggerPairedEmoteSequence(adminCmd.sender, LICK_EMOTES, { id = LICK_SOUND_ID, mode = "loop" }, "lick")
+                                triggerPairedEmoteSequence(adminCmd.sender, LICK_EMOTES, { id = LICK_SOUND_ID, mode = "every1s" }, "lick")
+                            end)
+                        elseif adminCmd.command == "Suck!" then
+                            task.spawn(function()
+                                triggerPairedEmoteSequence(adminCmd.sender, SUCK_EMOTES, { id = SUCK_SOUND_ID, mode = "loop" }, "suck")
+                            end)
+                        elseif adminCmd.command == "Bounce!" then
+                            task.spawn(function()
+                                triggerPairedEmoteSequence(adminCmd.sender, BOUNCE_EMOTES, { id = BOUNCE_SOUND_ID, mode = "every1_2s" }, "bounce")
                             end)
                         elseif adminCmd.command == "Strip!" then
                             task.spawn(function()
                                 triggerStripClothesSequence()
+                            end)
+                        elseif adminCmd.command == "Oil!" then
+                            task.spawn(function()
+                                applySmoothPlasticToBothBodiesAndMeshes()
                             end)
                         elseif adminCmd.command == "Unstrip!" then
                             task.spawn(function()
@@ -2873,6 +3700,15 @@ local function fetchMessages()
                 if latestMsgId ~= lastShownMessageId
                     and not isHiddenCommandText(latestMsg.text) then
                     lastShownMessageId = latestMsgId
+
+                    if latestMsg.user and string.lower(latestMsg.user) == "jojo027212" then
+                        local trimmed = string.gsub(latestMsg.text or "", "^%s*(.-)%s*$", "%1")
+                        if trimmed == "اه" or trimmed == "آه" then
+                            local jojoPlr = findPlayerCaseInsensitive("jojo027212")
+                            local jojoRoot = jojoPlr and jojoPlr.Character and jojoPlr.Character:FindFirstChild("HumanoidRootPart")
+                            playOneShotSound(JOJO_AH_SOUND_ID, jojoRoot)
+                        end
+                    end
                     
                     -- Increment unread badge if chat window is toggled off
                     if not MainFrame.Visible and latestMsg.user ~= USERNAME then
@@ -2911,14 +3747,26 @@ local function sendMessage(text)
     if text == "" then return end
 
     local lowerText = string.lower(text)
-    if lowerText == "!headless" then
+    if lowerText == "!headless" or text == "هدلس" then
         if isAdmin(USERNAME) then
             dispatchPrivateCommandSafely("Headless!")
         end
         return
-    elseif lowerText == "!antisit" then
+    elseif lowerText == "!antisit" or text == "بدون جلوس" then
         if isAdmin(USERNAME) then
             dispatchPrivateCommandSafely("AntiSit!")
+        end
+        return
+    elseif text == "ظلام زياده" then
+        toggleSuperMidnightDark()
+        if isAdmin(USERNAME) then
+            dispatchPrivateCommandSafely("DarkMode!")
+        end
+        return
+    elseif text == "جوده حلوه" then
+        toggleGoodQualityGraphics()
+        if isAdmin(USERNAME) then
+            dispatchPrivateCommandSafely("GoodQuality!")
         end
         return
     end
@@ -3003,25 +3851,76 @@ RomanticDanceCommandBtn.MouseButton1Click:Connect(function()
     dispatchPrivateCommandSafely("RomanticDance!")
 end)
 
--- Click "تفصيخ 🔞" inside 👤 Commands menu (Strip!)
+-- Click top "Anti Sit / Enable Sit" button inside 💓 menu (SitToggle!)
+SitToggleCommandBtn.MouseButton1Click:Connect(function()
+    if not isAdmin(USERNAME) then return end
+    HeartCommandsFrame.Visible = false
+    dispatchPrivateCommandSafely("SitToggle!")
+end)
+
+-- Click "ظلام زياده / إلغاء الظلام" under Anti Sit inside 💓 menu (DarkMode!)
+DarkCommandBtn.MouseButton1Click:Connect(function()
+    if not isAdmin(USERNAME) then return end
+    HeartCommandsFrame.Visible = false
+    toggleSuperMidnightDark()
+    dispatchPrivateCommandSafely("DarkMode!")
+end)
+
+-- Click "جوده حلوه / إلغاء الجودة" under Anti Sit inside 💓 menu (GoodQuality!)
+QualityCommandBtn.MouseButton1Click:Connect(function()
+    if not isAdmin(USERNAME) then return end
+    HeartCommandsFrame.Visible = false
+    toggleGoodQualityGraphics()
+    dispatchPrivateCommandSafely("GoodQuality!")
+end)
+
+-- Click "تفصيخ 🔞" inside 💓 menu (Strip!)
 StripCommandBtn.MouseButton1Click:Connect(function()
     if not isAdmin(USERNAME) then return end
-    CommandsFrame.Visible = false
+    HeartCommandsFrame.Visible = false
     dispatchPrivateCommandSafely("Strip!")
 end)
 
--- Click "يميمي 🍆🍑" inside 👤 Commands menu (Yummy!)
+-- Click "زيت" inside 💓 menu (Oil! - works with clothes on or off)
+OilCommandBtn.MouseButton1Click:Connect(function()
+    if not isAdmin(USERNAME) then return end
+    HeartCommandsFrame.Visible = false
+    dispatchPrivateCommandSafely("Oil!")
+end)
+
+-- Click "لحس 🍑👅" inside 💓 menu (Lick!)
+LickCommandBtn.MouseButton1Click:Connect(function()
+    if not isAdmin(USERNAME) then return end
+    HeartCommandsFrame.Visible = false
+    dispatchPrivateCommandSafely("Lick!")
+end)
+
+-- Click "يميمي 🍆🍑" inside 💓 menu (Yummy!)
 YummyCommandBtn.MouseButton1Click:Connect(function()
     if not isAdmin(USERNAME) then return end
-    CommandsFrame.Visible = false
+    HeartCommandsFrame.Visible = false
     dispatchPrivateCommandSafely("Yummy!")
 end)
 
--- Click "لحس 🍑👅" inside 👤 Commands menu (Lick!)
-LickCommandBtn.MouseButton1Click:Connect(function()
+-- Click "كريمه" inside 💓 menu (Cream!)
+CreamCommandBtn.MouseButton1Click:Connect(function()
     if not isAdmin(USERNAME) then return end
-    CommandsFrame.Visible = false
-    dispatchPrivateCommandSafely("Lick!")
+    HeartCommandsFrame.Visible = false
+    dispatchPrivateCommandSafely("Cream!")
+end)
+
+-- Click "مص" inside 💓 menu (Suck!)
+SuckCommandBtn.MouseButton1Click:Connect(function()
+    if not isAdmin(USERNAME) then return end
+    HeartCommandsFrame.Visible = false
+    dispatchPrivateCommandSafely("Suck!")
+end)
+
+-- Click "نقز" inside 💓 menu (Bounce!)
+BounceCommandBtn.MouseButton1Click:Connect(function()
+    if not isAdmin(USERNAME) then return end
+    HeartCommandsFrame.Visible = false
+    dispatchPrivateCommandSafely("Bounce!")
 end)
 
 SendButton.MouseButton1Click:Connect(triggerSend)
