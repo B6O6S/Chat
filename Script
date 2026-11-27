@@ -13,8 +13,8 @@ local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
 
 -- Configuration
-local BIN_ID = "6b070fdcac6210605aa3dff1"
-local API_KEY = "$2a$10$aQPb.NqmETzkU1ZOGQkl3u.2oN9t5ISCo/UtcsZiLQxlPxVmXt9R2"
+local BIN_ID = "6b09b8b41b390e1b559c1b9c"
+local API_KEY = "$2a$10$AQDZWoD6B1pl.fuCDGN/kegQUfL19wVIUb268h5gmtfu2bcbC90EC"
 local USERNAME = LocalPlayer.Name
 local USER_ID = LocalPlayer.UserId
 
